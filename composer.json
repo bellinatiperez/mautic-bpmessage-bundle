@@ -1,0 +1,23 @@
+{
+    "name": "mautic/bpmessage-bundle",
+    "description": "Mautic plugin for sending SMS, WhatsApp and RCS messages via BpMessage API in batch mode",
+    "type": "mautic-plugin",
+    "version": "1.0.0",
+    "keywords": ["mautic", "plugin", "bpmessage", "sms", "whatsapp", "rcs", "batch"],
+    "license": "GPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Bellinati",
+            "email": "dev@bellinati.com.br"
+        }
+    ],
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "MauticPlugin\\MauticBpMessageBundle\\": ""
+        }
+    }
+}
