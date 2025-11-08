@@ -18,6 +18,8 @@ return [
                 'class' => \MauticPlugin\MauticBpMessageBundle\EventListener\CampaignSubscriber::class,
                 'arguments' => [
                     'mautic.bpmessage.model.bpmessage',
+                    'mautic.bpmessage.model.email',
+                    'mautic.bpmessage.model.email_template',
                     'monolog.logger.mautic',
                 ],
             ],
@@ -27,6 +29,14 @@ return [
                 'class' => \MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageActionType::class,
                 'alias' => 'bpmessage_action',
             ],
+            'mautic.bpmessage.form.type.email_action' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageEmailActionType::class,
+                'alias' => 'bpmessage_email_action',
+            ],
+            'mautic.bpmessage.form.type.email_template_action' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageEmailTemplateActionType::class,
+                'alias' => 'bpmessage_email_template_action',
+            ],
         ],
         'models' => [
             'mautic.bpmessage.model.bpmessage' => [
@@ -34,6 +44,26 @@ return [
                 'arguments' => [
                     'mautic.bpmessage.service.lot_manager',
                     'mautic.bpmessage.service.message_mapper',
+                    'doctrine.orm.entity_manager',
+                    'monolog.logger.mautic',
+                    'mautic.helper.integration',
+                ],
+            ],
+            'mautic.bpmessage.model.email' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailModel::class,
+                'arguments' => [
+                    'mautic.bpmessage.service.email_lot_manager',
+                    'mautic.bpmessage.service.email_message_mapper',
+                    'doctrine.orm.entity_manager',
+                    'monolog.logger.mautic',
+                    'mautic.helper.integration',
+                ],
+            ],
+            'mautic.bpmessage.model.email_template' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailTemplateModel::class,
+                'arguments' => [
+                    'mautic.bpmessage.service.email_lot_manager',
+                    'mautic.bpmessage.service.email_template_message_mapper',
                     'doctrine.orm.entity_manager',
                     'monolog.logger.mautic',
                     'mautic.helper.integration',
@@ -75,12 +105,35 @@ return [
                     'monolog.logger.mautic',
                 ],
             ],
+            'mautic.bpmessage.service.email_lot_manager' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Service\EmailLotManager::class,
+                'arguments' => [
+                    'doctrine.orm.entity_manager',
+                    'mautic.bpmessage.http.client',
+                    'monolog.logger.mautic',
+                ],
+            ],
+            'mautic.bpmessage.service.email_message_mapper' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Service\EmailMessageMapper::class,
+                'arguments' => [
+                    'monolog.logger.mautic',
+                ],
+            ],
+            'mautic.bpmessage.service.email_template_message_mapper' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Service\EmailTemplateMessageMapper::class,
+                'arguments' => [
+                    'monolog.logger.mautic',
+                    'doctrine.orm.entity_manager',
+                    'mautic.helper.mailer',
+                ],
+            ],
         ],
         'commands' => [
             'mautic.bpmessage.command.process' => [
                 'class' => \MauticPlugin\MauticBpMessageBundle\Command\ProcessBpMessageQueuesCommand::class,
                 'arguments' => [
                     'mautic.bpmessage.model.bpmessage',
+                    'mautic.bpmessage.model.email',
                 ],
                 'tag' => 'console.command',
             ],
@@ -88,6 +141,23 @@ return [
                 'class' => \MauticPlugin\MauticBpMessageBundle\Command\CleanupBpMessageCommand::class,
                 'arguments' => [
                     'mautic.bpmessage.model.bpmessage',
+                ],
+                'tag' => 'console.command',
+            ],
+            'mautic.bpmessage.command.test_actions' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Command\TestBpMessageActionsCommand::class,
+                'arguments' => [
+                    'doctrine.orm.entity_manager',
+                    'mautic.bpmessage.service.message_mapper',
+                    'mautic.bpmessage.service.email_message_mapper',
+                    'mautic.bpmessage.service.email_template_message_mapper',
+                ],
+                'tag' => 'console.command',
+            ],
+            'mautic.bpmessage.command.create_test_template' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Command\CreateTestTemplateCommand::class,
+                'arguments' => [
+                    'doctrine.orm.entity_manager',
                 ],
                 'tag' => 'console.command',
             ],

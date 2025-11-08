@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MauticPlugin\MauticBpMessageBundle\Command;
 
 use MauticPlugin\MauticBpMessageBundle\Model\BpMessageModel;
+use MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailModel;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -17,10 +18,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class ProcessBpMessageQueuesCommand extends Command
 {
     private BpMessageModel $bpMessageModel;
+    private BpMessageEmailModel $bpMessageEmailModel;
 
-    public function __construct(BpMessageModel $bpMessageModel)
-    {
+    public function __construct(
+        BpMessageModel $bpMessageModel,
+        BpMessageEmailModel $bpMessageEmailModel
+    ) {
         $this->bpMessageModel = $bpMessageModel;
+        $this->bpMessageEmailModel = $bpMessageEmailModel;
         parent::__construct();
     }
 
@@ -152,24 +157,39 @@ EOT
         }
 
         try {
-            $stats = $this->bpMessageModel->processOpenLots();
+            // Process regular message lots (SMS/WhatsApp/RCS)
+            $io->text('Processing message lots (SMS/WhatsApp/RCS)...');
+            $messageStats = $this->bpMessageModel->processOpenLots($forceClose);
+
+            // Process email lots
+            $io->text('Processing email lots...');
+            $emailStats = $this->bpMessageEmailModel->processOpenLots($forceClose);
+
+            // Combine statistics
+            $totalStats = [
+                'processed' => $messageStats['processed'] + $emailStats['processed'],
+                'succeeded' => $messageStats['succeeded'] + $emailStats['succeeded'],
+                'failed' => $messageStats['failed'] + $emailStats['failed'],
+            ];
 
             $io->table(
                 ['Metric', 'Count'],
                 [
-                    ['Lots Processed', $stats['processed']],
-                    ['Succeeded', $stats['succeeded']],
-                    ['Failed', $stats['failed']],
+                    ['Message Lots Processed', $messageStats['processed']],
+                    ['Email Lots Processed', $emailStats['processed']],
+                    ['Total Lots Processed', $totalStats['processed']],
+                    ['Total Succeeded', $totalStats['succeeded']],
+                    ['Total Failed', $totalStats['failed']],
                 ]
             );
 
-            if ($stats['processed'] === 0) {
+            if ($totalStats['processed'] === 0) {
                 $io->info('No lots to process');
-            } elseif ($stats['failed'] > 0) {
-                $io->warning("Processed {$stats['processed']} lots, but {$stats['failed']} failed");
+            } elseif ($totalStats['failed'] > 0) {
+                $io->warning("Processed {$totalStats['processed']} lots, but {$totalStats['failed']} failed");
                 return Command::FAILURE;
             } else {
-                $io->success("Successfully processed {$stats['processed']} lots");
+                $io->success("Successfully processed {$totalStats['processed']} lots");
             }
 
             return Command::SUCCESS;

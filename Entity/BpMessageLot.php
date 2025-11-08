@@ -60,6 +60,11 @@ class BpMessageLot
     private int $idServiceSettings;
 
     /**
+     * @ORM\Column(name="service_type", type="integer", nullable=true)
+     */
+    private ?int $serviceType = null;
+
+    /**
      * @ORM\Column(name="id_book_business_send_group", type="integer", nullable=true)
      */
     private ?int $idBookBusinessSendGroup = null;
@@ -143,6 +148,7 @@ class BpMessageLot
         $builder->addNamedField('userCpf', 'string', 'user_cpf', ['length' => 14]);
         $builder->addNamedField('idQuotaSettings', 'integer', 'id_quota_settings');
         $builder->addNamedField('idServiceSettings', 'integer', 'id_service_settings');
+        $builder->addNamedField('serviceType', 'integer', 'service_type', ['nullable' => true]);
         $builder->addNamedField('idBookBusinessSendGroup', 'integer', 'id_book_business_send_group', ['nullable' => true]);
         $builder->addNamedField('imageUrl', 'text', 'image_url', ['nullable' => true]);
         $builder->addNamedField('imageName', 'string', 'image_name', ['nullable' => true, 'length' => 255]);
@@ -242,6 +248,17 @@ class BpMessageLot
     public function setIdServiceSettings(int $idServiceSettings): self
     {
         $this->idServiceSettings = $idServiceSettings;
+        return $this;
+    }
+
+    public function getServiceType(): ?int
+    {
+        return $this->serviceType;
+    }
+
+    public function setServiceType(?int $serviceType): self
+    {
+        $this->serviceType = $serviceType;
         return $this;
     }
 

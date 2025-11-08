@@ -1,6 +1,6 @@
 # MauticBpMessageBundle
 
-Plugin para Mautic que integra com a API BpMessage para envio de mensagens SMS, WhatsApp e RCS em lote.
+Plugin para Mautic que integra com a API BpMessage para envio de mensagens SMS, WhatsApp, RCS e Emails em lote.
 
 ## 📋 Índice
 
@@ -8,21 +8,27 @@ Plugin para Mautic que integra com a API BpMessage para envio de mensagens SMS, 
 - [Requisitos](#requisitos)
 - [Instalação](#instalação)
 - [Configuração](#configuração)
-- [Uso](#uso)
+- [Ações de Campanha](#ações-de-campanha)
 - [Comandos CLI](#comandos-cli)
 - [Estrutura do Banco de Dados](#estrutura-do-banco-de-dados)
+- [Unicidade de Lotes](#unicidade-de-lotes)
 - [Fluxo de Funcionamento](#fluxo-de-funcionamento)
 - [Troubleshooting](#troubleshooting)
 - [Desenvolvimento](#desenvolvimento)
 
 ## 🚀 Características
 
+- ✅ **3 Tipos de Ação**: SMS/WhatsApp/RCS, Email Personalizado e Email Template
 - ✅ **Envio em Lote**: Agrupa mensagens para envio otimizado (até 5000 por lote)
-- ✅ **Múltiplos Canais**: Suporta SMS, WhatsApp e RCS
-- ✅ **Integração com Campanhas**: Ação nativa no Campaign Builder do Mautic
+- ✅ **Múltiplos Canais**: Suporta SMS, WhatsApp, RCS e Email
+- ✅ **Integração com Campanhas**: 3 ações nativas no Campaign Builder do Mautic
 - ✅ **Tokens Dinâmicos**: Use `{contactfield=fieldname}` para personalizar mensagens
 - ✅ **Gestão de Filas**: Sistema robusto de filas com retry automático
 - ✅ **Configuração Flexível**: Controle de tamanho de lote e janela de tempo
+- ✅ **Templates do Mautic**: Use templates de email existentes do Mautic
+- ✅ **SQL Fallback**: Garante persistência durante batch processing
+- ✅ **Unicidade de Lotes**: Lotes únicos por configuração (quota + service + type)
+- ✅ **Force Close**: Comando para processar lotes imediatamente
 - ✅ **Logs Detalhados**: Auditoria completa de todas as operações
 - ✅ **CLI Commands**: Comandos para processar filas e fazer limpeza
 
@@ -30,8 +36,9 @@ Plugin para Mautic que integra com a API BpMessage para envio de mensagens SMS, 
 
 - Mautic 4.x ou 5.x
 - PHP 7.4+ ou 8.0+
+- MySQL 5.7+ ou MariaDB 10.2+
 - Conta ativa na API BpMessage
-- Credenciais da API BpMessage (idQuotaSettings, idServiceSettings)
+- Credenciais da API BpMessage
 
 ## 🔧 Instalação
 
@@ -53,7 +60,7 @@ php bin/console cache:clear
 1. Acesse Mautic Admin → Plugins
 2. Clique em "Install/Upgrade Plugins"
 3. O plugin "BpMessage" aparecerá na lista
-4. Clique em "Install"
+4. Clique para publicar
 
 ### 4. Criar Tabelas do Banco
 
@@ -73,6 +80,7 @@ CREATE TABLE bpmessage_lot (
     user_cpf VARCHAR(14) NOT NULL,
     id_quota_settings INT NOT NULL,
     id_service_settings INT NOT NULL,
+    service_type INT NULL,
     id_book_business_send_group INT NULL,
     image_url TEXT NULL,
     image_name VARCHAR(255) NULL,
@@ -122,12 +130,20 @@ Adicione ao crontab para processar as filas:
 
 ## ⚙️ Configuração
 
-### 1. Obter Credenciais da BpMessage
+### 1. Configurar Plugin no Mautic
 
-Antes de configurar, você precisa obter as seguintes informações da BpMessage:
+1. Acesse **Settings** → **Plugins** → **BpMessage**
+2. Configure:
+   - **API Base URL**: URL da API (ex: `https://api.bpmessage.com.br`)
+   - **Default Batch Size**: Tamanho padrão de lote (padrão: 1000)
+   - **Default Time Window**: Janela de tempo padrão em segundos (padrão: 300)
+3. Clique em **Save & Close**
+4. Marque como **Published**
 
-- **API Base URL**: URL da API (ex: `https://api.bpmessage.com.br`)
-- **User CPF**: CPF do usuário autorizado
+### 2. Obter Credenciais da BpMessage
+
+Você precisará obter as seguintes informações da BpMessage:
+
 - **ID Quota Settings**: ID da cota disponível
 - **ID Service Settings**: ID da rota de envio
 
@@ -136,113 +152,102 @@ Para obter IDs de cota e rota, consulte o endpoint da BpMessage:
 GET /api/ServiceSettings/GetRoutes
 ```
 
-### 2. Criar Campanha no Mautic
+## 📱 Ações de Campanha
 
-1. Acesse **Campaigns** → **New**
-2. Dê um nome à campanha
-3. Configure a fonte de contatos (segmento, formulário, etc.)
+O plugin oferece **3 tipos de ação** para campanhas:
 
-### 3. Adicionar Ação BpMessage
+### 1. Send BpMessage (SMS/WhatsApp/RCS)
 
-1. No Campaign Builder, clique em **"Add Action"**
-2. Selecione **"Send BpMessage"**
-3. Configure os campos:
+Envia mensagens de texto via SMS, WhatsApp ou RCS.
 
-#### Configurações da API
-- **API Base URL**: `https://api.bpmessage.com.br`
-- **User CPF**: CPF do usuário (11 dígitos)
+**Configuração:**
 
-#### Configurações do Lote
-- **Lot Name**: Nome descritivo do lote (opcional)
-- **Start Date**: Data de início do disparo (padrão: agora)
-- **End Date**: Data de término do disparo (padrão: +1 dia)
-- **Batch Size**: Quantidade de mensagens por lote (padrão: 1000, máx: 5000)
-- **Time Window**: Tempo em segundos para aguardar antes de fechar lote (padrão: 300)
+- **ID Quota Settings**: ID da cota (obrigatório, deve ser > 0)
+- **ID Service Settings**: ID da rota (obrigatório, deve ser > 0)
+- **Service Type**:
+  - `1` = SMS
+  - `2` = WhatsApp (padrão)
+  - `3` = RCS
+- **Batch Size**: Tamanho do lote (padrão: 1000, máx: 5000)
+- **Time Window**: Tempo em segundos (padrão: 300)
 
-#### Configurações da Rota
-- **ID Quota Settings**: ID da cota (obrigatório)
-- **ID Service Settings**: ID da rota (obrigatório)
-- **ID Book Business Send Group**: ID do grupo (obrigatório para WhatsApp oficial)
+**Mapeamento de Campos:**
+- **Contract Field**: Campo que contém o número do contrato
+- **CPF Field**: Campo que contém o CPF/CNPJ
+- **Phone Field**: Campo que contém o telefone (padrão: `mobile`)
 
-#### Tipo de Serviço
-- **SMS** (idServiceType: 1)
-- **WhatsApp** (idServiceType: 2) - padrão
-- **RCS** (idServiceType: 3)
-
-#### Mapeamento de Campos
-- **Contract Field**: Nome do campo que contém o número do contrato (ex: `contract_number`)
-- **CPF Field**: Nome do campo que contém o CPF/CNPJ (ex: `cpf`)
-- **Phone Field**: Nome do campo que contém o telefone (padrão: `mobile`)
-
-#### Mensagem (SMS/WhatsApp)
+**Exemplo de Mensagem:**
 ```
 Olá {contactfield=firstname},
 
-Sua mensagem personalizada aqui.
+Seu contrato {contactfield=contract_number} foi atualizado.
 
-Contrato: {contactfield=contract_number}
+Qualquer dúvida, entre em contato.
 ```
 
-**Tokens disponíveis:**
-- `{contactfield=fieldname}` - Qualquer campo do contato
-- `{timestamp}` - Unix timestamp atual
-- `{date_now}` - Data e hora atual
-
-#### Template RCS (apenas para RCS)
+**Para RCS:**
 - **Template ID**: ID do template RCS cadastrado na BpMessage
 
-### 4. Exemplo de Configuração Completa
+### 2. Send BpMessage Email
 
-```yaml
-API Base URL: https://api.bpmessage.com.br
-User CPF: 12345678900
-ID Quota Settings: 123
-ID Service Settings: 456
-Service Type: WhatsApp
-Batch Size: 1000
-Time Window: 300 (5 minutos)
+Envia emails personalizados via BpMessage API.
 
-Mapeamento:
-  Contract Field: contract_number
-  CPF Field: cpf
-  Phone Field: mobile
+**Configuração:**
 
-Mensagem:
-  Olá {contactfield=firstname},
+- **ID Service Settings**: ID da rota de email (obrigatório)
+- **Batch Size**: Tamanho do lote (padrão: 1000)
+- **Time Window**: Tempo em segundos (padrão: 300)
 
-  Seu contrato {contactfield=contract_number} foi atualizado.
+**Campos do Email:**
+- **From**: Email do remetente (ex: `noreply@example.com`)
+- **To Field**: Campo que contém o email do destinatário (padrão: `email`)
+- **Subject**: Assunto do email (suporta tokens)
+- **Body**: Corpo do email em HTML (suporta tokens)
 
-  Qualquer dúvida, entre em contato.
+**Campos Adicionais (opcionais):**
+- **Contract Field**: Campo do contrato
+- **CPF/CNPJ Receiver Field**: Campo do CPF/CNPJ
+- **CRM ID**: ID do CRM
+- **Book Business Foreign ID**: ID externo do negócio
+- **Step Foreign ID**: ID externo da etapa
+
+**Exemplo:**
+```
+Subject: Olá {contactfield=firstname}!
+
+Body:
+<html>
+  <body>
+    <h1>Olá {contactfield=firstname}!</h1>
+    <p>Seu contrato <strong>{contactfield=contract_number}</strong> foi atualizado.</p>
+    <p>Qualquer dúvida, entre em contato.</p>
+  </body>
+</html>
 ```
 
-## 📱 Uso
+### 3. Send BpMessage Email Template
 
-### Fluxo Normal
+Envia emails usando templates existentes do Mautic.
 
-1. **Contato entra na campanha** → Ação BpMessage é acionada
-2. **Plugin verifica**: Existe lote aberto para esta campanha?
-   - **Não existe**: Cria novo lote via API BpMessage
-   - **Existe**: Usa o lote existente
-3. **Mensagem é adicionada à fila** do lote
-4. **Cron processa**: A cada 5 minutos verifica lotes que devem ser fechados
-   - **Critério de tempo**: Passou X segundos desde primeira mensagem?
-   - **Critério de quantidade**: Atingiu Y mensagens?
-5. **Envia mensagens** via `POST /api/Lot/AddMessageToLot/{idLot}`
-6. **Finaliza lote** via `POST /api/Lot/FinishLot/{idLot}`
+**Configuração:**
 
-### Estados do Lote
+- **ID Service Settings**: ID da rota de email (obrigatório)
+- **Email Template**: Selecione um template de email do Mautic
+- **Batch Size**: Tamanho do lote (padrão: 1000)
+- **Time Window**: Tempo em segundos (padrão: 300)
 
-- **CREATING**: Lote está sendo criado na API
-- **OPEN**: Lote aberto, aceitando mensagens
-- **SENDING**: Lote fechando, enviando mensagens
-- **FINISHED**: Lote finalizado com sucesso
-- **FAILED**: Lote falhou
+**Campos Adicionais (opcionais):**
+- **Contract Field**: Campo do contrato
+- **CPF/CNPJ Receiver Field**: Campo do CPF/CNPJ
+- **CRM ID**: ID do CRM
+- **Book Business Foreign ID**: ID externo do negócio
+- **Step Foreign ID**: ID externo da etapa
 
-### Estados da Mensagem
-
-- **PENDING**: Aguardando envio
-- **SENT**: Enviada com sucesso
-- **FAILED**: Falhou (será retentada até 3x)
+**Vantagens:**
+- ✅ Usa editor visual do Mautic
+- ✅ Templates reutilizáveis
+- ✅ Tokens substituídos automaticamente
+- ✅ Subject e body do template são usados
 
 ## 🖥️ Comandos CLI
 
@@ -254,7 +259,7 @@ Processa lotes abertos e envia mensagens pendentes:
 # Processar lotes que atingiram critério de fechamento
 php bin/console mautic:bpmessage:process
 
-# Forçar fechamento de todos os lotes abertos
+# Forçar fechamento de TODOS os lotes abertos (útil para testes)
 php bin/console mautic:bpmessage:process --force-close
 
 # Processar lote específico
@@ -282,6 +287,21 @@ php bin/console mautic:bpmessage:cleanup --days=60
 php bin/console mautic:bpmessage:cleanup --dry-run
 ```
 
+### Comandos de Teste
+
+```bash
+# Criar template de teste
+php bin/console mautic:bpmessage:create-test-template
+
+# Testar todas as 3 ações com 50 contatos
+php bin/console mautic:bpmessage:test-actions --contacts=50
+
+# Testar apenas uma ação específica
+php bin/console mautic:bpmessage:test-actions --action=message
+php bin/console mautic:bpmessage:test-actions --action=email
+php bin/console mautic:bpmessage:test-actions --action=template
+```
+
 ## 🗄️ Estrutura do Banco de Dados
 
 ### Tabela `bpmessage_lot`
@@ -293,9 +313,12 @@ Armazena informações dos lotes:
 | `id` | INT | ID interno |
 | `external_lot_id` | VARCHAR(255) | ID retornado pela API BpMessage |
 | `name` | VARCHAR(255) | Nome do lote |
-| `status` | VARCHAR(20) | Status do lote |
+| `status` | VARCHAR(20) | Status: CREATING, OPEN, SENDING, FINISHED, FAILED |
 | `messages_count` | INT | Quantidade de mensagens |
 | `campaign_id` | INT | ID da campanha |
+| `id_quota_settings` | INT | ID da quota (0 para emails) |
+| `id_service_settings` | INT | ID do serviço |
+| `service_type` | INT | 1=SMS, 2=WhatsApp, 3=RCS, NULL=Email |
 | `batch_size` | INT | Tamanho máximo do lote |
 | `time_window` | INT | Janela de tempo em segundos |
 | `created_at` | DATETIME | Data de criação |
@@ -311,16 +334,44 @@ Armazena mensagens na fila:
 | `lot_id` | INT | FK para bpmessage_lot |
 | `lead_id` | INT | FK para leads |
 | `payload_json` | TEXT | Payload da mensagem em JSON |
-| `status` | VARCHAR(20) | Status da mensagem |
+| `status` | VARCHAR(20) | PENDING, SENT, FAILED |
 | `retry_count` | SMALLINT | Contador de tentativas |
 | `created_at` | DATETIME | Data de criação |
 | `sent_at` | DATETIME | Data de envio |
+
+## 🔑 Unicidade de Lotes
+
+Os lotes são **únicos** pela combinação de:
+
+### Para Message Lots (SMS/WhatsApp/RCS):
+- `campaign_id` - Qual campanha
+- `id_quota_settings` - Qual quota
+- `id_service_settings` - Qual configuração de serviço
+- `service_type` - 1=SMS, 2=WhatsApp, 3=RCS
+
+### Para Email Lots:
+- `campaign_id` - Qual campanha
+- `id_quota_settings` - Sempre 0 (não usado para emails)
+- `id_service_settings` - Qual configuração de email
+
+**Exemplo:**
+
+Se a mesma campanha tem 2 ações:
+- Ação 1: WhatsApp (quota=1000, service=100, type=2)
+- Ação 2: SMS (quota=1000, service=200, type=1)
+
+**Resultado:** 2 lotes separados serão criados! ✅
+
+Isso garante que:
+- ✅ Mensagens com configurações diferentes não se misturam
+- ✅ Cada lote é processado independentemente
+- ✅ Relatórios e auditoria são precisos
 
 ## 🔄 Fluxo de Funcionamento
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    FLUXO DE ENVIO EM LOTE                   │
+│              FLUXO DE ENVIO EM LOTE (SMS/WhatsApp)          │
 └─────────────────────────────────────────────────────────────┘
 
 1. CONTATO ENTRA NA CAMPANHA
@@ -334,29 +385,132 @@ Armazena mensagens na fila:
 
 3. OBTER OU CRIAR LOTE
    └── LotManager::getOrCreateActiveLot()
-       ├── Busca lote aberto da campanha
+       ├── Busca lote OPEN com mesma configuração:
+       │   • campaign_id
+       │   • id_quota_settings
+       │   • id_service_settings
+       │   • service_type
        └── Se não existe:
-           └── POST /api/Lot/CreateLot → retorna idLot
+           ├── POST /api/Lot/CreateLot → retorna idLot
+           ├── EntityManager flush()
+           └── SQL UPDATE (fallback para garantir persistência)
 
 4. MAPEAR E ENFILEIRAR MENSAGEM
    └── MessageMapper::mapLeadToMessage()
        └── LotManager::queueMessage()
-           └── Salva em bpmessage_queue (status: PENDING)
+           ├── Salva em bpmessage_queue (status: PENDING)
+           ├── Incrementa lot.messages_count
+           └── SQL UPDATE (fallback para garantir incremento)
 
-5. PROCESSAR LOTE (VIA CRON)
+5. PROCESSAR LOTE (VIA CRON OU --force-close)
    └── ProcessBpMessageQueuesCommand
        └── BpMessageModel::processOpenLots()
+           ├── Filtra apenas message lots (idQuotaSettings > 0)
            └── Para cada lote que atingiu critério:
                ├── LotManager::sendLotMessages()
                │   └── POST /api/Lot/AddMessageToLot/{idLot}
                │       (batches de até 5000)
                └── LotManager::finishLot()
-                   └── POST /api/Lot/FinishLot/{idLot}
+                   ├── POST /api/Lot/FinishLot/{idLot}
+                   ├── lot.status = 'FINISHED'
+                   ├── EntityManager flush()
+                   └── SQL UPDATE (fallback para garantir FINISHED)
 
 6. RESULTADO
    └── Status: FINISHED ✅
    └── Mensagens: SENT ✅
 ```
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FLUXO DE ENVIO EMAIL                     │
+└─────────────────────────────────────────────────────────────┘
+
+1. CONTATO ENTRA NA CAMPANHA
+   └── CampaignSubscriber::onCampaignTriggerAction()
+       └── BpMessageEmailModel::sendEmail()
+           ou BpMessageEmailTemplateModel::sendEmail()
+
+2. VALIDAÇÃO
+   └── EmailMessageMapper::validateLead()
+       ├── Verifica email válido
+       └── Valida campos obrigatórios
+
+3. OBTER OU CRIAR LOTE
+   └── EmailLotManager::getOrCreateActiveLot()
+       ├── Busca lote OPEN com mesma configuração:
+       │   • campaign_id
+       │   • id_quota_settings = 0 (fixo)
+       │   • id_service_settings
+       └── Se não existe:
+           ├── POST /api/LotEmail/CreateLotEmail → retorna idLotEmail
+           ├── EntityManager flush()
+           └── SQL UPDATE (fallback)
+
+4. MAPEAR E ENFILEIRAR EMAIL
+   └── EmailMessageMapper::mapLeadToEmail()
+       └── EmailLotManager::queueEmail()
+           ├── Salva em bpmessage_queue (status: PENDING)
+           ├── Incrementa lot.messages_count
+           └── SQL UPDATE (fallback)
+
+5. PROCESSAR LOTE (VIA CRON OU --force-close)
+   └── ProcessBpMessageQueuesCommand
+       └── BpMessageEmailModel::processOpenLots()
+           ├── Filtra apenas email lots (idQuotaSettings = 0)
+           └── Para cada lote que atingiu critério:
+               ├── EmailLotManager::sendLotEmails()
+               │   └── POST /api/LotEmail/AddEmailToLot/{idLotEmail}
+               │       (batches de até 5000)
+               └── EmailLotManager::finishLot()
+                   ├── POST /api/LotEmail/FinishLotEmail/{idLotEmail}
+                   ├── lot.status = 'FINISHED'
+                   ├── EntityManager flush()
+                   └── SQL UPDATE (fallback)
+
+6. RESULTADO
+   └── Status: FINISHED ✅
+   └── Emails: SENT ✅
+```
+
+### Estados do Lote
+
+- **CREATING**: Lote está sendo criado na API BpMessage
+- **OPEN**: Lote aberto, aceitando mensagens
+- **SENDING**: Lote enviando mensagens para a API
+- **FINISHED**: Lote finalizado com sucesso
+- **FAILED**: Lote falhou durante criação
+
+### Estados da Mensagem
+
+- **PENDING**: Aguardando envio
+- **SENT**: Enviada com sucesso
+- **FAILED**: Falhou (será retentada até 3x)
+
+### SQL Fallback Pattern
+
+Para garantir persistência durante batch processing do Mautic, o plugin usa SQL direto como fallback:
+
+```php
+// 1. Tenta via EntityManager
+$lot->setStatus('FINISHED');
+$this->entityManager->flush();
+
+// 2. Garante com SQL direto
+$connection = $this->entityManager->getConnection();
+$connection->executeStatement(
+    'UPDATE bpmessage_lot SET status = ? WHERE id = ?',
+    ['FINISHED', $lot->getId()]
+);
+
+// 3. Atualiza entidade
+$this->entityManager->refresh($lot);
+```
+
+Este padrão é aplicado em:
+- ✅ `createLot()` - Marcar como OPEN
+- ✅ `queueMessage()` - Incrementar messages_count
+- ✅ `finishLot()` - Marcar como FINISHED
 
 ## 🐛 Troubleshooting
 
@@ -369,7 +523,7 @@ crontab -l | grep bpmessage
 
 2. **Execute manualmente**:
 ```bash
-php bin/console mautic:bpmessage:process -vvv
+php bin/console mautic:bpmessage:process --force-close -vvv
 ```
 
 3. **Verifique logs**:
@@ -377,23 +531,45 @@ php bin/console mautic:bpmessage:process -vvv
 tail -f var/logs/mautic_prod.log | grep BpMessage
 ```
 
-### Erro: "Lead validation failed"
+### Erro: "Configuration field 'id_quota_settings' must be greater than 0"
 
-Verifique se o contato tem todos os campos obrigatórios:
-- Campo de contrato
-- Campo de CPF
-- Campo de telefone (formato: 11987654321)
+Para **message lots** (SMS/WhatsApp/RCS), o `id_quota_settings` deve ser > 0.
 
-### Erro: "Failed to create lot in BpMessage"
+Para **email lots**, o sistema automaticamente usa 0.
 
-1. Verifique a URL da API
-2. Verifique as credenciais (idQuotaSettings, idServiceSettings)
-3. Teste a conexão:
+Verifique a configuração da ação na campanha.
+
+### Lote ficou em OPEN mesmo após processar
+
+Este problema foi corrigido! O sistema agora usa SQL fallback para garantir que o status FINISHED seja persistido.
+
+Se ainda ocorrer:
 ```bash
-curl -X POST https://api.bpmessage.com.br/api/Lot/CreateLot \
-  -H "Content-Type: application/json" \
-  -d '{...}'
+# Verificar status do lote
+php bin/console ddev exec -- mysql -e "
+SELECT id, status, finished_at, messages_count
+FROM bpmessage_lot
+WHERE id = X
+"
+
+# Forçar processamento
+php bin/console mautic:bpmessage:process --lot-id=X
 ```
+
+### Lotes duplicados criados
+
+Certifique-se de que a coluna `service_type` existe no banco:
+
+```sql
+ALTER TABLE bpmessage_lot
+ADD COLUMN service_type INT NULL AFTER id_service_settings;
+```
+
+O sistema verifica unicidade por:
+- campaign_id
+- id_quota_settings
+- id_service_settings
+- service_type
 
 ### Ver status dos lotes
 
@@ -404,7 +580,9 @@ FROM bpmessage_lot
 GROUP BY status;
 
 -- Lotes abertos há mais tempo
-SELECT id, name, created_at, messages_count
+SELECT id, campaign_id, status, messages_count,
+       id_quota_settings, id_service_settings, service_type,
+       created_at
 FROM bpmessage_lot
 WHERE status = 'OPEN'
 ORDER BY created_at ASC;
@@ -413,12 +591,36 @@ ORDER BY created_at ASC;
 SELECT lot_id, status, COUNT(*) as count
 FROM bpmessage_queue
 GROUP BY lot_id, status;
+
+-- Verificar unicidade de lotes
+SELECT campaign_id, id_quota_settings, id_service_settings,
+       service_type, COUNT(*) as count
+FROM bpmessage_lot
+WHERE status = 'OPEN'
+GROUP BY campaign_id, id_quota_settings, id_service_settings, service_type
+HAVING count > 1;
 ```
 
 ### Forçar fechamento de lote específico
 
 ```bash
 php bin/console mautic:bpmessage:process --lot-id=123
+```
+
+### Limpar tudo e começar do zero
+
+```bash
+# Limpar eventos da campanha
+php bin/console ddev exec -- mysql -e "DELETE FROM campaign_lead_event_log WHERE campaign_id = X"
+
+# Limpar filas e lotes
+php bin/console ddev exec -- mysql -e "DELETE FROM bpmessage_queue; DELETE FROM bpmessage_lot;"
+
+# Limpar cache
+php bin/console cache:clear
+
+# Executar campanha novamente
+php bin/console mautic:campaigns:trigger --campaign-id=X
 ```
 
 ## 🔧 Desenvolvimento
@@ -429,9 +631,12 @@ php bin/console mautic:bpmessage:process --lot-id=123
 MauticBpMessageBundle/
 ├── Command/                    # Comandos CLI
 │   ├── ProcessBpMessageQueuesCommand.php
-│   └── CleanupBpMessageCommand.php
+│   ├── CleanupBpMessageCommand.php
+│   ├── TestBpMessageActionsCommand.php
+│   └── CreateTestTemplateCommand.php
 ├── Config/                     # Configurações
-│   └── config.php
+│   ├── config.php              # Serviços e dependências
+│   └── services.php            # Container config
 ├── Entity/                     # Entidades Doctrine
 │   ├── BpMessageLot.php
 │   ├── BpMessageLotRepository.php
@@ -440,57 +645,132 @@ MauticBpMessageBundle/
 ├── EventListener/              # Event Subscribers
 │   └── CampaignSubscriber.php
 ├── Form/Type/                  # Form Types
-│   └── BpMessageActionType.php
+│   ├── BpMessageActionType.php
+│   ├── BpMessageEmailActionType.php
+│   └── BpMessageEmailTemplateActionType.php
 ├── Http/                       # Cliente HTTP
 │   └── BpMessageClient.php
+├── Integration/                # Integração Mautic
+│   ├── BpMessageIntegration.php
+│   └── Support/
+│       └── BpMessageSupport.php
 ├── Model/                      # Models
-│   └── BpMessageModel.php
+│   ├── BpMessageModel.php
+│   ├── BpMessageEmailModel.php
+│   └── BpMessageEmailTemplateModel.php
 ├── Service/                    # Services
 │   ├── LotManager.php
-│   └── MessageMapper.php
+│   ├── EmailLotManager.php
+│   ├── MessageMapper.php
+│   ├── EmailMessageMapper.php
+│   └── EmailTemplateMessageMapper.php
 └── Translations/               # Traduções
     ├── en_US/messages.ini
     └── pt_BR/messages.ini
 ```
 
-### Adicionar Novo Campo
+### Padrões de Código
 
-1. Adicionar no `BpMessageActionType.php`:
+#### 1. SQL Fallback Pattern
+
+Use este padrão para operações críticas:
+
 ```php
-$builder->add('new_field', TextType::class, [
-    'label' => 'mautic.bpmessage.form.new_field',
-    // ...
-]);
+// EntityManager
+$entity->setField($value);
+$this->entityManager->flush();
+
+// SQL Fallback
+$connection = $this->entityManager->getConnection();
+$connection->executeStatement(
+    'UPDATE table SET field = ? WHERE id = ?',
+    [$value, $entity->getId()]
+);
+
+// Refresh
+$this->entityManager->refresh($entity);
 ```
 
-2. Adicionar no `MessageMapper.php`:
+#### 2. Unicidade de Lotes
+
+Ao buscar ou criar lotes, sempre verifique:
+
 ```php
-if (!empty($config['new_field'])) {
-    $message['newField'] = $config['new_field'];
+// Para message lots
+$qb->where('l.campaignId = :campaignId')
+    ->andWhere('l.idQuotaSettings = :idQuotaSettings')
+    ->andWhere('l.idServiceSettings = :idServiceSettings')
+    ->andWhere('l.serviceType = :serviceType');
+
+// Para email lots
+$qb->where('l.campaignId = :campaignId')
+    ->andWhere('l.idQuotaSettings = 0')
+    ->andWhere('l.idServiceSettings = :idServiceSettings');
+```
+
+#### 3. Processamento Separado
+
+Message lots e email lots são processados separadamente:
+
+```php
+// BpMessageModel
+->andWhere('l.idQuotaSettings > 0')  // Message lots
+
+// BpMessageEmailModel
+->andWhere('l.idQuotaSettings = 0')  // Email lots
+```
+
+### Adicionar Nova Ação de Campanha
+
+1. Criar Form Type em `Form/Type/`:
+```php
+class NewActionType extends AbstractType { ... }
+```
+
+2. Criar Model em `Model/`:
+```php
+class NewModel {
+    public function sendNewType(Lead $lead, array $config, Campaign $campaign): array
 }
 ```
 
-3. Adicionar tradução em `messages.ini`:
-```ini
-mautic.bpmessage.form.new_field="New Field"
+3. Registrar no `CampaignSubscriber.php`:
+```php
+CampaignEvents::CAMPAIGN_ON_BUILD => [
+    ['onCampaignBuild', 0],
+],
 ```
 
-### Logs
+4. Adicionar traduções em `Translations/*/messages.ini`
 
-Para ativar logs detalhados, adicione em `app/config/config_dev.php`:
+5. Registrar serviços em `Config/config.php`
 
-```php
-$container->loadFromExtension('monolog', [
-    'channels' => ['bpmessage'],
-    'handlers' => [
-        'bpmessage' => [
-            'type' => 'stream',
-            'path' => '%kernel.logs_dir%/bpmessage_%kernel.environment%.log',
-            'level' => 'debug',
-            'channels' => ['bpmessage'],
-        ],
-    ],
-]);
+### Testes
+
+```bash
+# Criar template de teste
+php bin/console mautic:bpmessage:create-test-template
+
+# Testar ações
+php bin/console mautic:bpmessage:test-actions --contacts=10 --action=message
+
+# Ver logs
+tail -f var/logs/mautic_dev.log | grep BpMessage
+```
+
+### Debug
+
+Ativar logs detalhados:
+
+```bash
+# Ver requests HTTP
+tail -f var/logs/mautic_dev.log | grep "BpMessage HTTP"
+
+# Ver operações de lote
+tail -f var/logs/mautic_dev.log | grep "BpMessage.*lot"
+
+# Ver processamento
+tail -f var/logs/mautic_dev.log | grep "Processing"
 ```
 
 ## 📄 Licença
@@ -499,8 +779,7 @@ GPL-3.0-or-later
 
 ## 👥 Autores
 
-**Bellinati**
-Email: dev@bellinati.com.br
+**Bellinati Perez**
 
 ## 🤝 Contribuindo
 
@@ -514,4 +793,20 @@ Contribuições são bem-vindas! Por favor:
 
 ## 📞 Suporte
 
-Para suporte, entre em contato com dev@bellinati.com.br ou abra uma issue no repositório.
+Para suporte, abra uma issue no repositório.
+
+---
+
+## 📝 Changelog
+
+### v2.0.0 (2025-01-08)
+
+- ✅ Adicionadas 3 ações de campanha (Message, Email, Email Template)
+- ✅ Implementado sistema de unicidade de lotes
+- ✅ Adicionado SQL fallback pattern para garantir persistência
+- ✅ Implementado --force-close para processamento imediato
+- ✅ Separado processamento de message lots e email lots
+- ✅ Corrigida persistência do finishLot()
+- ✅ Adicionado campo service_type para unicidade
+- ✅ Melhorias nos logs e debugging
+- ✅ Comandos de teste e validação

@@ -8,16 +8,14 @@ use Doctrine\ORM\EntityManager;
 use Mautic\CampaignBundle\Entity\Campaign;
 use Mautic\LeadBundle\Entity\Lead;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
-use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLotRepository;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
-use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueueRepository;
 use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use Psr\Log\LoggerInterface;
 
 /**
- * Service to manage BpMessage lots (creation, queuing, sending, finishing)
+ * Service to manage BpMessage email lots (creation, queuing, sending, finishing)
  */
-class LotManager
+class EmailLotManager
 {
     private EntityManager $entityManager;
     private BpMessageClient $client;
@@ -34,7 +32,7 @@ class LotManager
     }
 
     /**
-     * Get or create an active lot for a campaign
+     * Get or create an active email lot for a campaign
      *
      * @param Campaign $campaign
      * @param array $config Action configuration
@@ -43,28 +41,25 @@ class LotManager
      */
     public function getOrCreateActiveLot(Campaign $campaign, array $config): BpMessageLot
     {
-        // Check if there's an open lot for this campaign with matching configuration
-        // Lots are unique by: campaignId + idQuotaSettings + idServiceSettings + serviceType
+        // Check if there's an open email lot for this campaign with matching configuration
+        // Email lots are unique by: campaignId + idServiceSettings (idQuotaSettings is always 0 for emails)
         $qb = $this->entityManager->createQueryBuilder();
         $qb->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.campaignId = :campaignId')
             ->andWhere('l.status = :status')
-            ->andWhere('l.idQuotaSettings = :idQuotaSettings')
+            ->andWhere('l.idQuotaSettings = 0')
             ->andWhere('l.idServiceSettings = :idServiceSettings')
-            ->andWhere('l.serviceType = :serviceType')
             ->setParameter('campaignId', $campaign->getId())
             ->setParameter('status', 'OPEN')
-            ->setParameter('idQuotaSettings', (int) $config['id_quota_settings'])
             ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
-            ->setParameter('serviceType', (int) ($config['service_type'] ?? 2))
             ->orderBy('l.createdAt', 'DESC')
             ->setMaxResults(1);
 
         $lot = $qb->getQuery()->getOneOrNullResult();
 
         if (null !== $lot && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
-            $this->logger->info('BpMessage: Using existing OPEN lot', [
+            $this->logger->info('BpMessage Email: Using existing OPEN lot', [
                 'lot_id' => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
                 'campaign_id' => $campaign->getId(),
@@ -75,22 +70,19 @@ class LotManager
 
         // Check if there's a recent CREATING lot (within last 60 seconds) to prevent duplicates
         // This happens when multiple leads are processed in quick succession
-        // Must match same configuration: idQuotaSettings + idServiceSettings + serviceType
+        // Must match same configuration: idServiceSettings (idQuotaSettings is always 0 for emails)
         $recentThreshold = new \DateTime('-60 seconds');
         $qbCreating = $this->entityManager->createQueryBuilder();
         $qbCreating->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.campaignId = :campaignId')
             ->andWhere('l.status = :status')
-            ->andWhere('l.idQuotaSettings = :idQuotaSettings')
+            ->andWhere('l.idQuotaSettings = 0')
             ->andWhere('l.idServiceSettings = :idServiceSettings')
-            ->andWhere('l.serviceType = :serviceType')
             ->andWhere('l.createdAt > :threshold')
             ->setParameter('campaignId', $campaign->getId())
             ->setParameter('status', 'CREATING')
-            ->setParameter('idQuotaSettings', (int) $config['id_quota_settings'])
             ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
-            ->setParameter('serviceType', (int) ($config['service_type'] ?? 2))
             ->setParameter('threshold', $recentThreshold)
             ->orderBy('l.createdAt', 'DESC')
             ->setMaxResults(1);
@@ -98,7 +90,7 @@ class LotManager
         $creatingLot = $qbCreating->getQuery()->getOneOrNullResult();
 
         if (null !== $creatingLot) {
-            $this->logger->info('BpMessage: Reusing recent CREATING lot to prevent duplicates', [
+            $this->logger->info('BpMessage Email: Reusing recent CREATING lot to prevent duplicates', [
                 'lot_id' => $creatingLot->getId(),
                 'campaign_id' => $campaign->getId(),
                 'created_at' => $creatingLot->getCreatedAt()->format('Y-m-d H:i:s'),
@@ -107,8 +99,8 @@ class LotManager
             return $creatingLot;
         }
 
-        // Create new lot
-        $this->logger->info('BpMessage: Creating new lot', [
+        // Create new email lot
+        $this->logger->info('BpMessage Email: Creating new lot', [
             'campaign_id' => $campaign->getId(),
             'campaign_name' => $campaign->getName(),
         ]);
@@ -117,7 +109,7 @@ class LotManager
     }
 
     /**
-     * Create a new lot
+     * Create a new email lot
      *
      * @param Campaign $campaign
      * @param array $config
@@ -128,49 +120,48 @@ class LotManager
     {
         // Create lot entity
         $lot = new BpMessageLot();
-        $lot->setName($config['lot_name'] ?? "Campaign {$campaign->getName()}");
+        $lot->setName($config['lot_name'] ?? "Email Campaign {$campaign->getName()}");
         $lot->setStartDate(new \DateTime('now'));
-        $lot->setEndDate(new \DateTime('now')); // Same day to avoid API error
-        $lot->setUserCpf('system'); // Fixed value for all lots
-        $lot->setIdQuotaSettings((int) $config['id_quota_settings']);
+        $lot->setEndDate(new \DateTime('now'));
+        $lot->setUserCpf('system');
+        $lot->setIdQuotaSettings(0); // Not used for email lots
         $lot->setIdServiceSettings((int) $config['id_service_settings']);
-        $lot->setServiceType((int) ($config['service_type'] ?? 2)); // 1=SMS, 2=WhatsApp, 3=RCS
         $lot->setCampaignId($campaign->getId());
         $lot->setApiBaseUrl($config['api_base_url']);
         $lot->setBatchSize((int) ($config['batch_size'] ?? $config['default_batch_size'] ?? 1000));
         $lot->setTimeWindow((int) ($config['time_window'] ?? $config['default_time_window'] ?? 300));
         $lot->setStatus('CREATING');
 
-        if (!empty($config['image_url'])) {
-            $lot->setImageUrl($config['image_url']);
-        }
-
-        if (!empty($config['image_name'])) {
-            $lot->setImageName($config['image_name']);
-        }
-
         // Save to database first
         $this->entityManager->persist($lot);
         $this->entityManager->flush();
 
-        // Call BpMessage API to create lot
+        // Call BpMessage API to create email lot
         $this->client->setBaseUrl($config['api_base_url']);
 
         $lotData = [
             'name' => $lot->getName(),
             'startDate' => $lot->getStartDate()->format('c'),
             'endDate' => $lot->getEndDate()->format('c'),
-            'user' => 'system', // Fixed value
-            'idQuotaSettings' => $lot->getIdQuotaSettings(),
+            'user' => 'system',
             'idServiceSettings' => $lot->getIdServiceSettings(),
         ];
 
-        if (null !== $lot->getImageUrl()) {
-            $lotData['imageUrl'] = $lot->getImageUrl();
+        // Add optional fields
+        if (!empty($config['crm_id'])) {
+            $lotData['crmId'] = (int) $config['crm_id'];
         }
 
-        if (null !== $lot->getImageName()) {
-            $lotData['imageName'] = $lot->getImageName();
+        if (!empty($config['book_business_foreign_id'])) {
+            $lotData['bookBusinessForeignId'] = $config['book_business_foreign_id'];
+        }
+
+        if (!empty($config['step_foreign_id'])) {
+            $lotData['stepForeignId'] = $config['step_foreign_id'];
+        }
+
+        if (isset($config['is_radar_lot'])) {
+            $lotData['isRadarLot'] = (bool) $config['is_radar_lot'];
         }
 
         // Merge lot_data from config if provided
@@ -179,18 +170,18 @@ class LotManager
         }
 
         try {
-            $result = $this->client->createLot($lotData);
+            $result = $this->client->createEmailLot($lotData);
 
             if (!$result['success']) {
                 $lot->setStatus('FAILED');
                 $lot->setErrorMessage($result['error']);
                 $this->entityManager->flush();
 
-                throw new \RuntimeException("Failed to create lot in BpMessage: {$result['error']}");
+                throw new \RuntimeException("Failed to create email lot in BpMessage: {$result['error']}");
             }
 
             // Update lot with external ID
-            $lot->setExternalLotId((string) $result['idLot']);
+            $lot->setExternalLotId((string) $result['idLotEmail']);
             $lot->setStatus('OPEN');
 
             // Ensure the entity is managed and flush immediately
@@ -202,13 +193,13 @@ class LotManager
             $connection = $this->entityManager->getConnection();
             $connection->executeStatement(
                 'UPDATE bpmessage_lot SET status = ?, externalLotId = ? WHERE id = ?',
-                ['OPEN', (string) $result['idLot'], $lot->getId()]
+                ['OPEN', (string) $result['idLotEmail'], $lot->getId()]
             );
 
             // Force refresh from database to ensure we have the latest data
             $this->entityManager->refresh($lot);
 
-            $this->logger->info('BpMessage: Lot created successfully', [
+            $this->logger->info('BpMessage Email: Lot created successfully', [
                 'lot_id' => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
                 'status' => $lot->getStatus(),
@@ -219,10 +210,9 @@ class LotManager
             // If any exception occurs during API call, mark lot as FAILED
             $lot->setStatus('FAILED');
             $lot->setErrorMessage('API call exception: ' . $e->getMessage());
-            $this->entityManager->persist($lot);
             $this->entityManager->flush();
 
-            $this->logger->error('BpMessage: Exception during lot creation', [
+            $this->logger->error('BpMessage Email: Exception during lot creation', [
                 'lot_id' => $lot->getId(),
                 'error' => $e->getMessage(),
             ]);
@@ -232,14 +222,14 @@ class LotManager
     }
 
     /**
-     * Queue a message for a lot
+     * Queue an email for a lot
      *
      * @param BpMessageLot $lot
      * @param Lead $lead
-     * @param array $messageData
+     * @param array $emailData
      * @return BpMessageQueue
      */
-    public function queueMessage(BpMessageLot $lot, Lead $lead, array $messageData): BpMessageQueue
+    public function queueEmail(BpMessageLot $lot, Lead $lead, array $emailData): BpMessageQueue
     {
         // Check if lead is already queued
         $qb = $this->entityManager->createQueryBuilder();
@@ -253,7 +243,7 @@ class LotManager
         $count = (int) $qb->getQuery()->getSingleScalarResult();
 
         if ($count > 0) {
-            $this->logger->warning('BpMessage: Lead already queued', [
+            $this->logger->warning('BpMessage Email: Lead already queued', [
                 'lot_id' => $lot->getId(),
                 'lead_id' => $lead->getId(),
             ]);
@@ -264,7 +254,7 @@ class LotManager
         $queue = new BpMessageQueue();
         $queue->setLot($lot);
         $queue->setLead($lead);
-        $queue->setPayloadArray($messageData);
+        $queue->setPayloadArray($emailData);
         $queue->setStatus('PENDING');
 
         $this->entityManager->persist($queue);
@@ -284,7 +274,7 @@ class LotManager
         // Refresh lot to get updated count
         $this->entityManager->refresh($lot);
 
-        $this->logger->info('BpMessage: Message queued', [
+        $this->logger->info('BpMessage Email: Email queued', [
             'lot_id' => $lot->getId(),
             'lead_id' => $lead->getId(),
             'queue_id' => $queue->getId(),
@@ -295,26 +285,15 @@ class LotManager
     }
 
     /**
-     * Check if a lot should be closed
+     * Send all pending emails for a lot
      *
      * @param BpMessageLot $lot
      * @return bool
      */
-    public function shouldCloseLot(BpMessageLot $lot): bool
-    {
-        return $lot->shouldCloseByTime() || $lot->shouldCloseByCount();
-    }
-
-    /**
-     * Send all pending messages for a lot
-     *
-     * @param BpMessageLot $lot
-     * @return bool
-     */
-    public function sendLotMessages(BpMessageLot $lot): bool
+    public function sendLotEmails(BpMessageLot $lot): bool
     {
         if (!$lot->isOpen()) {
-            $this->logger->warning('BpMessage: Cannot send messages, lot is not open', [
+            $this->logger->warning('BpMessage Email: Cannot send emails, lot is not open', [
                 'lot_id' => $lot->getId(),
                 'status' => $lot->getStatus(),
             ]);
@@ -325,12 +304,12 @@ class LotManager
         $lot->setStatus('SENDING');
         $this->entityManager->flush();
 
-        $this->logger->info('BpMessage: Starting to send lot messages', [
+        $this->logger->info('BpMessage Email: Starting to send lot emails', [
             'lot_id' => $lot->getId(),
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
-        // Get all pending messages
+        // Get all pending emails
         $qb = $this->entityManager->createQueryBuilder();
         $qb->select('q')
             ->from(BpMessageQueue::class, 'q')
@@ -340,41 +319,41 @@ class LotManager
             ->setParameter('status', 'PENDING')
             ->orderBy('q.createdAt', 'ASC');
 
-        $pendingMessages = $qb->getQuery()->getResult();
+        $pendingEmails = $qb->getQuery()->getResult();
 
-        if (empty($pendingMessages)) {
-            $this->logger->warning('BpMessage: No pending messages to send', [
+        if (empty($pendingEmails)) {
+            $this->logger->warning('BpMessage Email: No pending emails to send', [
                 'lot_id' => $lot->getId(),
             ]);
 
             return true;
         }
 
-        $this->logger->info('BpMessage: Found pending messages', [
+        $this->logger->info('BpMessage Email: Found pending emails', [
             'lot_id' => $lot->getId(),
-            'count' => count($pendingMessages),
+            'count' => count($pendingEmails),
         ]);
 
         // Send in batches of 5000 (BpMessage limit)
-        $batches = array_chunk($pendingMessages, 5000);
+        $batches = array_chunk($pendingEmails, 5000);
         $success = true;
 
         foreach ($batches as $batchIndex => $batch) {
-            $this->logger->info('BpMessage: Sending batch', [
+            $this->logger->info('BpMessage Email: Sending batch', [
                 'lot_id' => $lot->getId(),
                 'batch_index' => $batchIndex,
                 'batch_size' => count($batch),
             ]);
 
-            $messages = array_map(function (BpMessageQueue $queue) {
+            $emails = array_map(function (BpMessageQueue $queue) {
                 return $queue->getPayloadArray();
             }, $batch);
 
             $this->client->setBaseUrl($lot->getApiBaseUrl());
-            $result = $this->client->addMessagesToLot((int) $lot->getExternalLotId(), $messages);
+            $result = $this->client->addEmailsToLot((int) $lot->getExternalLotId(), $emails);
 
             if ($result['success']) {
-                // Mark messages as sent
+                // Mark emails as sent
                 $ids = array_map(function (BpMessageQueue $queue) {
                     return $queue->getId();
                 }, $batch);
@@ -390,21 +369,21 @@ class LotManager
                     ->getQuery()
                     ->execute();
 
-                $this->logger->info('BpMessage: Batch sent successfully', [
+                $this->logger->info('BpMessage Email: Batch sent successfully', [
                     'lot_id' => $lot->getId(),
                     'batch_index' => $batchIndex,
                 ]);
             } else {
                 $success = false;
 
-                // Mark messages as failed
+                // Mark emails as failed
                 foreach ($batch as $queue) {
                     $queue->markAsFailed($result['error']);
                 }
 
                 $this->entityManager->flush();
 
-                $this->logger->error('BpMessage: Batch failed', [
+                $this->logger->error('BpMessage Email: Batch failed', [
                     'lot_id' => $lot->getId(),
                     'batch_index' => $batchIndex,
                     'error' => $result['error'],
@@ -418,20 +397,20 @@ class LotManager
     }
 
     /**
-     * Finish a lot (close it in BpMessage)
+     * Finish an email lot (close it in BpMessage)
      *
      * @param BpMessageLot $lot
      * @return bool
      */
     public function finishLot(BpMessageLot $lot): bool
     {
-        $this->logger->info('BpMessage: Finishing lot', [
+        $this->logger->info('BpMessage Email: Finishing lot', [
             'lot_id' => $lot->getId(),
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
         $this->client->setBaseUrl($lot->getApiBaseUrl());
-        $result = $this->client->finishLot((int) $lot->getExternalLotId());
+        $result = $this->client->finishEmailLot((int) $lot->getExternalLotId());
 
         $now = new \DateTime();
 
@@ -450,7 +429,7 @@ class LotManager
             // Refresh to get latest data
             $this->entityManager->refresh($lot);
 
-            $this->logger->info('BpMessage: Lot finished successfully', [
+            $this->logger->info('BpMessage Email: Lot finished successfully', [
                 'lot_id' => $lot->getId(),
                 'status' => $lot->getStatus(),
             ]);
@@ -458,9 +437,9 @@ class LotManager
             return true;
         }
 
-        // API failed to finish, but messages were sent - still mark as FINISHED
-        // The lot MUST be closed because BpMessage won't accept more messages
-        $this->logger->warning('BpMessage: Failed to finish lot via API, but messages were sent. Marking as FINISHED locally.', [
+        // API failed to finish, but emails were sent - still mark as FINISHED
+        // The lot MUST be closed because BpMessage won't accept more emails
+        $this->logger->warning('BpMessage Email: Failed to finish lot via API, but emails were sent. Marking as FINISHED locally.', [
             'lot_id' => $lot->getId(),
             'error' => $result['error'],
         ]);
@@ -481,140 +460,32 @@ class LotManager
         // Refresh to get latest data
         $this->entityManager->refresh($lot);
 
-        $this->logger->info('BpMessage: Lot marked as FINISHED locally', [
+        $this->logger->info('BpMessage Email: Lot marked as FINISHED locally', [
             'lot_id' => $lot->getId(),
             'status' => $lot->getStatus(),
         ]);
 
-        return true; // Consider it success since messages were sent
+        return true; // Consider it success since emails were sent
     }
 
     /**
-     * Process a lot (send messages and finish)
+     * Process an email lot (send emails and finish)
      *
      * @param BpMessageLot $lot
      * @return bool
      */
     public function processLot(BpMessageLot $lot): bool
     {
-        $success = $this->sendLotMessages($lot);
+        $success = $this->sendLotEmails($lot);
 
         if (!$success) {
             $lot->setStatus('FAILED');
-            $lot->setErrorMessage('Failed to send messages');
+            $lot->setErrorMessage('Failed to send emails');
             $this->entityManager->flush();
 
             return false;
         }
 
         return $this->finishLot($lot);
-    }
-
-    /**
-     * Retry failed messages
-     *
-     * @param int $maxRetries
-     * @param int|null $limit
-     * @return int Number of messages retried
-     */
-    public function retryFailedMessages(int $maxRetries = 3, ?int $limit = null): int
-    {
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('q')
-            ->from(BpMessageQueue::class, 'q')
-            ->where('q.status = :status')
-            ->andWhere('q.retryCount < :maxRetries')
-            ->setParameter('status', 'FAILED')
-            ->setParameter('maxRetries', $maxRetries)
-            ->orderBy('q.createdAt', 'ASC');
-
-        if (null !== $limit) {
-            $qb->setMaxResults($limit);
-        }
-
-        $failedMessages = $qb->getQuery()->getResult();
-
-        if (empty($failedMessages)) {
-            return 0;
-        }
-
-        $this->logger->info('BpMessage: Retrying failed messages', [
-            'count' => count($failedMessages),
-        ]);
-
-        // Group by lot
-        $messagesByLot = [];
-        foreach ($failedMessages as $message) {
-            $lotId = $message->getLot()->getId();
-            if (!isset($messagesByLot[$lotId])) {
-                $messagesByLot[$lotId] = [];
-            }
-            $messagesByLot[$lotId][] = $message;
-        }
-
-        $retried = 0;
-
-        foreach ($messagesByLot as $lotId => $messages) {
-            $lot = $this->entityManager->find(BpMessageLot::class, $lotId);
-
-            if (null === $lot || !$lot->isOpen()) {
-                continue;
-            }
-
-            // Reset to pending
-            $ids = array_map(function (BpMessageQueue $queue) {
-                return $queue->getId();
-            }, $messages);
-
-            $qb = $this->entityManager->createQueryBuilder();
-            $qb->update(BpMessageQueue::class, 'q')
-                ->set('q.status', ':status')
-                ->set('q.retryCount', 'q.retryCount + 1')
-                ->where($qb->expr()->in('q.id', ':ids'))
-                ->setParameter('status', 'PENDING')
-                ->setParameter('ids', $ids)
-                ->getQuery()
-                ->execute();
-
-            $retried += count($ids);
-        }
-
-        return $retried;
-    }
-
-    /**
-     * Parse datetime value from form to DateTime object
-     *
-     * @param mixed $value Value from form (can be DateTime, string, or null)
-     * @param string $default Default value if null
-     * @return \DateTime
-     */
-    private function parseDateTime($value, string $default = 'now'): \DateTime
-    {
-        // If already a DateTime object, return it
-        if ($value instanceof \DateTime) {
-            return $value;
-        }
-
-        // If null or empty string, use default
-        if (null === $value || '' === $value) {
-            return new \DateTime($default);
-        }
-
-        // If string, try to parse it
-        if (is_string($value)) {
-            try {
-                return new \DateTime($value);
-            } catch (\Exception $e) {
-                $this->logger->warning('BpMessage: Failed to parse datetime', [
-                    'value' => $value,
-                    'error' => $e->getMessage(),
-                ]);
-                return new \DateTime($default);
-            }
-        }
-
-        // Fallback to default
-        return new \DateTime($default);
     }
 }

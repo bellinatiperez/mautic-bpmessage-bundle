@@ -148,16 +148,11 @@ class MessageMapper
      */
     private function processTokens(string $text, Lead $lead): string
     {
-        // Replace contact field tokens: {contactfield=firstname}
-        $text = preg_replace_callback(
-            '/\{contactfield=([a-zA-Z0-9_]+)\}/',
-            function ($matches) use ($lead) {
-                $fieldName = $matches[1];
-                $value = $lead->getFieldValue($fieldName);
-                return $value ?? '';
-            },
-            $text
-        );
+        // Get contact values for token replacement
+        $contactValues = $this->getContactValues($lead);
+
+        // Use TokenHelper for comprehensive token replacement (handles all field types correctly)
+        $text = rawurldecode(TokenHelper::findLeadTokens($text, $contactValues, true));
 
         // Add timestamp token
         $text = str_replace('{timestamp}', (string) time(), $text);
@@ -217,7 +212,26 @@ class MessageMapper
      */
     private function getContactValues(Lead $lead): array
     {
-        return $lead->getProfileFields();
+        // Get all lead fields in the correct format for TokenHelper
+        $fields = $lead->getProfileFields();
+
+        // Always ensure basic fields are present with correct values from getter methods
+        // This is important because getProfileFields() might return empty/null values
+        $fields['id'] = $lead->getId();
+
+        if ($lead->getEmail()) {
+            $fields['email'] = $lead->getEmail();
+        }
+
+        if ($lead->getFirstname()) {
+            $fields['firstname'] = $lead->getFirstname();
+        }
+
+        if ($lead->getLastname()) {
+            $fields['lastname'] = $lead->getLastname();
+        }
+
+        return $fields;
     }
 
     /**
