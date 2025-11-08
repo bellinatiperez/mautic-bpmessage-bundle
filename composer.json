@@ -1,5 +1,5 @@
 {
-    "name": "mautic/bpmessage-bundle",
+    "name": "bellinatiperez/bpmessage-bundle",
     "description": "Mautic plugin for sending SMS, WhatsApp and RCS messages via BpMessage API in batch mode",
     "type": "mautic-plugin",
     "version": "1.0.0",
