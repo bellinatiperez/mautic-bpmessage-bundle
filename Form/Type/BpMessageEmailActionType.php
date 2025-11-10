@@ -66,6 +66,51 @@ class BpMessageEmailActionType extends AbstractType
             ]
         );
 
+        // Optional CRM fields
+        $builder->add(
+            'crm_id',
+            IntegerType::class,
+            [
+                'required' => true,
+                'label' => 'mautic.bpmessage.form.crm_id',
+                'label_attr' => ['class' => 'control-label'],
+                'attr' => [
+                    'class' => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.crm_id.tooltip',
+                ],
+                'required' => false,
+            ]
+        );
+
+        $builder->add(
+            'book_business_foreign_id',
+            TextType::class,
+            [
+                'required' => true,
+                'label' => 'mautic.bpmessage.form.book_business_foreign_id',
+                'label_attr' => ['class' => 'control-label'],
+                'attr' => [
+                    'class' => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.book_business_foreign_id.tooltip',
+                ],
+                'required' => false,
+            ]
+        );
+
+        $builder->add(
+            'step_foreign_id',
+            TextType::class,
+            [
+                'label' => 'mautic.bpmessage.form.step_foreign_id',
+                'label_attr' => ['class' => 'control-label'],
+                'attr' => [
+                    'class' => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.step_foreign_id.tooltip',
+                ],
+                'required' => false,
+            ]
+        );
+
         // Email From
         $builder->add(
             'email_from',
@@ -195,49 +240,6 @@ class BpMessageEmailActionType extends AbstractType
                 ],
                 'attr' => ['class' => 'form-control'],
                 'data' => true,
-                'required' => false,
-            ]
-        );
-
-        // Optional CRM fields
-        $builder->add(
-            'crm_id',
-            IntegerType::class,
-            [
-                'label' => 'mautic.bpmessage.form.crm_id',
-                'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.crm_id.tooltip',
-                ],
-                'required' => false,
-            ]
-        );
-
-        $builder->add(
-            'book_business_foreign_id',
-            TextType::class,
-            [
-                'label' => 'mautic.bpmessage.form.book_business_foreign_id',
-                'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.book_business_foreign_id.tooltip',
-                ],
-                'required' => false,
-            ]
-        );
-
-        $builder->add(
-            'step_foreign_id',
-            TextType::class,
-            [
-                'label' => 'mautic.bpmessage.form.step_foreign_id',
-                'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.step_foreign_id.tooltip',
-                ],
                 'required' => false,
             ]
         );
