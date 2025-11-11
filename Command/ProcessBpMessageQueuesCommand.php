@@ -157,6 +157,14 @@ EOT
         }
 
         try {
+            // First, process orphaned CREATING lots (stuck lots)
+            $io->text('Checking for orphaned CREATING lots...');
+            $orphanedStats = $this->bpMessageEmailModel->processOrphanedCreatingLots(5);
+
+            if ($orphanedStats['processed'] > 0) {
+                $io->warning("Found {$orphanedStats['processed']} orphaned CREATING lots, marked {$orphanedStats['marked_failed']} as FAILED");
+            }
+
             // Process regular message lots (SMS/WhatsApp/RCS)
             $io->text('Processing message lots (SMS/WhatsApp/RCS)...');
             $messageStats = $this->bpMessageModel->processOpenLots($forceClose);

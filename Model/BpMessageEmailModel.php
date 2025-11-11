@@ -87,8 +87,8 @@ class BpMessageEmailModel
             // Get or create active email lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Map lead to email format
-            $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign);
+            // Map lead to email format (passing lot for book_business_foreign_id)
+            $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign, $lot);
 
             // Queue email
             $this->lotManager->queueEmail($lot, $lead, $emailData);
@@ -178,6 +178,66 @@ class BpMessageEmailModel
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Process orphaned CREATING lots (lots stuck in CREATING status)
+     * Marks them as FAILED if they've been in CREATING for too long
+     *
+     * @param int $ageMinutes Minimum age in minutes to consider a lot as orphaned (default: 5)
+     * @return array Statistics about processed orphaned lots
+     */
+    public function processOrphanedCreatingLots(int $ageMinutes = 5): array
+    {
+        // Find all CREATING email lots that are older than $ageMinutes
+        $qb = $this->em->createQueryBuilder();
+        $qb->select('l')
+            ->from(BpMessageLot::class, 'l')
+            ->where('l.status = :status')
+            ->andWhere('l.idQuotaSettings = 0') // Email lots
+            ->andWhere('l.externalLotId IS NULL') // No external lot ID means creation failed
+            ->andWhere('l.createdAt < :threshold')
+            ->setParameter('status', 'CREATING')
+            ->setParameter('threshold', new \DateTime("-{$ageMinutes} minutes"))
+            ->orderBy('l.createdAt', 'ASC');
+
+        $orphanedLots = $qb->getQuery()->getResult();
+
+        $stats = [
+            'processed' => 0,
+            'marked_failed' => 0,
+        ];
+
+        foreach ($orphanedLots as $lot) {
+            ++$stats['processed'];
+
+            $this->logger->warning('BpMessage Email: Found orphaned CREATING lot', [
+                'lot_id' => $lot->getId(),
+                'created_at' => $lot->getCreatedAt()->format('Y-m-d H:i:s'),
+                'minutes_old' => (new \DateTime())->diff($lot->getCreatedAt())->i,
+            ]);
+
+            // Mark as FAILED
+            $lot->setStatus('FAILED');
+            $lot->setErrorMessage('Lot creation timed out - stuck in CREATING status');
+            $this->em->persist($lot);
+            $this->em->flush();
+
+            // Force update with SQL to ensure persistence
+            $connection = $this->em->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                ['FAILED', 'Lot creation timed out - stuck in CREATING status', $lot->getId()]
+            );
+
+            ++$stats['marked_failed'];
+
+            $this->logger->info('BpMessage Email: Marked orphaned lot as FAILED', [
+                'lot_id' => $lot->getId(),
+            ]);
         }
 
         return $stats;

@@ -21,6 +21,7 @@ return [
                     'mautic.bpmessage.model.email',
                     'mautic.bpmessage.model.email_template',
                     'monolog.logger.mautic',
+                    'database_connection',
                 ],
             ],
         ],
@@ -158,6 +159,15 @@ return [
                 'class' => \MauticPlugin\MauticBpMessageBundle\Command\CreateTestTemplateCommand::class,
                 'arguments' => [
                     'doctrine.orm.entity_manager',
+                ],
+                'tag' => 'console.command',
+            ],
+            'mautic.bpmessage.command.test_api' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Command\TestApiConnectionCommand::class,
+                'arguments' => [
+                    'mautic.bpmessage.http.client',
+                    'monolog.logger.mautic',
+                    'mautic.helper.integration',
                 ],
                 'tag' => 'console.command',
             ],

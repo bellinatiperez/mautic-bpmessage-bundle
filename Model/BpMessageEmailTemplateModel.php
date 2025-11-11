@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManager;
 use Mautic\CampaignBundle\Entity\Campaign;
 use Mautic\LeadBundle\Entity\Lead;
 use Mautic\PluginBundle\Helper\IntegrationHelper;
+use MauticPlugin\MauticBpMessageBundle\Exception\LotCreationException;
 use MauticPlugin\MauticBpMessageBundle\Integration\BpMessageIntegration;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailLotManager;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailTemplateMessageMapper;
@@ -86,8 +87,8 @@ class BpMessageEmailTemplateModel
             // Get or create active email lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Map lead to email format (with template rendering)
-            $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign);
+            // Map lead to email format (with template rendering, passing lot for book_business_foreign_id)
+            $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign, $lot);
 
             // Queue email
             $this->lotManager->queueEmail($lot, $lead, $emailData);
@@ -103,7 +104,12 @@ class BpMessageEmailTemplateModel
                 'success' => true,
                 'message' => 'Email from template queued successfully',
             ];
+        } catch (LotCreationException $e) {
+            // Re-throw LotCreationException to allow CampaignSubscriber to handle it properly
+            // This exception indicates a lot-level error, not a lead-specific error
+            throw $e;
         } catch (\Exception $e) {
+            // Lead-specific errors are caught and returned as failure
             $this->logger->error('BpMessage Email Template: Failed to send email', [
                 'lead_id' => $lead->getId(),
                 'campaign_id' => $campaign->getId(),

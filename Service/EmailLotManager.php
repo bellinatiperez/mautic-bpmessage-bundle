@@ -9,6 +9,7 @@ use Mautic\CampaignBundle\Entity\Campaign;
 use Mautic\LeadBundle\Entity\Lead;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
+use MauticPlugin\MauticBpMessageBundle\Exception\LotCreationException;
 use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use Psr\Log\LoggerInterface;
 
@@ -37,7 +38,7 @@ class EmailLotManager
      * @param Campaign $campaign
      * @param array $config Action configuration
      * @return BpMessageLot
-     * @throws \RuntimeException if lot creation fails
+     * @throws LotCreationException if lot creation fails
      */
     public function getOrCreateActiveLot(Campaign $campaign, array $config): BpMessageLot
     {
@@ -114,7 +115,7 @@ class EmailLotManager
      * @param Campaign $campaign
      * @param array $config
      * @return BpMessageLot
-     * @throws \RuntimeException if lot creation fails
+     * @throws LotCreationException if lot creation fails
      */
     private function createLot(Campaign $campaign, array $config): BpMessageLot
     {
@@ -131,6 +132,11 @@ class EmailLotManager
         $lot->setBatchSize((int) ($config['batch_size'] ?? $config['default_batch_size'] ?? 1000));
         $lot->setTimeWindow((int) ($config['time_window'] ?? $config['default_time_window'] ?? 300));
         $lot->setStatus('CREATING');
+
+        // Set book_business_foreign_id if provided
+        if (!empty($config['book_business_foreign_id'])) {
+            $lot->setBookBusinessForeignId($config['book_business_foreign_id']);
+        }
 
         // Save to database first
         $this->entityManager->persist($lot);
@@ -177,7 +183,7 @@ class EmailLotManager
                 $lot->setErrorMessage($result['error']);
                 $this->entityManager->flush();
 
-                throw new \RuntimeException("Failed to create email lot in BpMessage: {$result['error']}");
+                throw new LotCreationException("Failed to create email lot in BpMessage: {$result['error']}", $lot->getId());
             }
 
             // Update lot with external ID
@@ -206,8 +212,11 @@ class EmailLotManager
             ]);
 
             return $lot;
+        } catch (LotCreationException $e) {
+            // Already a LotCreationException, just re-throw it
+            throw $e;
         } catch (\Exception $e) {
-            // If any exception occurs during API call, mark lot as FAILED
+            // If any other exception occurs during API call, mark lot as FAILED
             $lot->setStatus('FAILED');
             $lot->setErrorMessage('API call exception: ' . $e->getMessage());
             $this->entityManager->flush();
@@ -217,7 +226,8 @@ class EmailLotManager
                 'error' => $e->getMessage(),
             ]);
 
-            throw $e;
+            // Wrap in LotCreationException to signal this is a lot-level error, not a lead error
+            throw new LotCreationException('API call exception: ' . $e->getMessage(), $lot->getId(), 0, $e);
         }
     }
 

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace MauticPlugin\MauticBpMessageBundle\EventListener;
 
+use Doctrine\DBAL\Connection;
 use Mautic\CampaignBundle\CampaignEvents;
 use Mautic\CampaignBundle\Event\CampaignBuilderEvent;
 use Mautic\CampaignBundle\Event\PendingEvent;
+use MauticPlugin\MauticBpMessageBundle\Exception\LotCreationException;
 use MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageActionType;
 use MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageEmailActionType;
 use MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageEmailTemplateActionType;
@@ -25,17 +27,20 @@ class CampaignSubscriber implements EventSubscriberInterface
     private BpMessageEmailModel $bpMessageEmailModel;
     private BpMessageEmailTemplateModel $bpMessageEmailTemplateModel;
     private LoggerInterface $logger;
+    private Connection $connection;
 
     public function __construct(
         BpMessageModel $bpMessageModel,
         BpMessageEmailModel $bpMessageEmailModel,
         BpMessageEmailTemplateModel $bpMessageEmailTemplateModel,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        Connection $connection
     ) {
         $this->bpMessageModel = $bpMessageModel;
         $this->bpMessageEmailModel = $bpMessageEmailModel;
         $this->bpMessageEmailTemplateModel = $bpMessageEmailTemplateModel;
         $this->logger = $logger;
+        $this->connection = $connection;
     }
 
     public static function getSubscribedEvents(): array
@@ -83,6 +88,7 @@ class CampaignSubscriber implements EventSubscriberInterface
                     'lot_data' => 'raw',
                     'additional_data' => 'raw',
                     'email_variables' => 'raw',
+                    'email_body' => 'raw',  // Preserve HTML in email body
                 ],
                 'channel' => 'bpmessage_email',
                 'channelIdField' => 'bpmessage_email_id',
@@ -101,6 +107,7 @@ class CampaignSubscriber implements EventSubscriberInterface
                     'lot_data' => 'raw',
                     'additional_data' => 'raw',
                     'email_variables' => 'raw',
+                    'email_body' => 'raw',  // Preserve HTML in email body (if template has custom body)
                 ],
                 'channel' => 'bpmessage_email_template',
                 'channelIdField' => 'bpmessage_email_template_id',
@@ -157,9 +164,24 @@ class CampaignSubscriber implements EventSubscriberInterface
                         'message' => $result['message'],
                     ]);
                 }
+            } catch (LotCreationException $e) {
+                // Lot creation failed - this is a configuration/API error, NOT a lead error
+                // Do NOT mark leads as failed - leave them pending for retry
+                $this->logger->error('BpMessage: LOT CREATION FAILED - Leads remain pending for retry', [
+                    'campaign_id' => $campaign->getId(),
+                    'lot_id' => $e->getLotId(),
+                    'error' => $e->getMessage(),
+                    'is_config_error' => $e->isConfigurationError(),
+                    'affected_leads' => is_countable($logs) ? count($logs) : 'unknown',
+                ]);
+
+                // Stop processing remaining leads - they will all fail with the same lot error
+                $this->logger->warning('BpMessage: Stopping batch processing due to lot creation failure');
+                break;
             } catch (\Exception $e) {
+                // Lead-specific error - mark this lead as failed
                 $event->fail($log, $e->getMessage());
-                $this->logger->error('BpMessage: Exception occurred', [
+                $this->logger->error('BpMessage: Lead-specific exception occurred', [
                     'lead_id' => $lead->getId(),
                     'error' => $e->getMessage(),
                 ]);
@@ -216,9 +238,24 @@ class CampaignSubscriber implements EventSubscriberInterface
                         'message' => $result['message'],
                     ]);
                 }
+            } catch (LotCreationException $e) {
+                // Lot creation failed - this is a configuration/API error, NOT a lead error
+                // Do NOT mark leads as failed - leave them pending for retry
+                $this->logger->error('BpMessage Email: LOT CREATION FAILED - Leads remain pending for retry', [
+                    'campaign_id' => $campaign->getId(),
+                    'lot_id' => $e->getLotId(),
+                    'error' => $e->getMessage(),
+                    'is_config_error' => $e->isConfigurationError(),
+                    'affected_leads' => is_countable($logs) ? count($logs) : 'unknown',
+                ]);
+
+                // Stop processing remaining leads - they will all fail with the same lot error
+                $this->logger->warning('BpMessage Email: Stopping batch processing due to lot creation failure');
+                break;
             } catch (\Exception $e) {
+                // Lead-specific error - mark this lead as failed
                 $event->fail($log, $e->getMessage());
-                $this->logger->error('BpMessage Email: Exception occurred', [
+                $this->logger->error('BpMessage Email: Lead-specific exception occurred', [
                     'lead_id' => $lead->getId(),
                     'error' => $e->getMessage(),
                 ]);
@@ -254,7 +291,19 @@ class CampaignSubscriber implements EventSubscriberInterface
             'count' => is_countable($logs) ? count($logs) : 'unknown',
         ]);
 
+        $lotFailed = false;
+        $lotError = null;
+        $failedLogIds = [];
+
         foreach ($logs as $log) {
+            // If lot creation failed previously, skip remaining leads but mark as failed (temporarily)
+            // These will be removed from failed_log table to allow retry
+            if ($lotFailed) {
+                $event->fail($log, $lotError->getMessage());
+                $failedLogIds[] = $log->getId();
+                continue;
+            }
+
             $lead = $log->getLead();
 
             $this->logger->info('BpMessage Email Template: Processing lead', [
@@ -275,13 +324,49 @@ class CampaignSubscriber implements EventSubscriberInterface
                         'message' => $result['message'],
                     ]);
                 }
-            } catch (\Exception $e) {
+            } catch (LotCreationException $e) {
+                // Lot creation failed - this is a configuration/API error, NOT a lead error
+                // Mark this log as failed temporarily (will be removed from failed_log for retry)
                 $event->fail($log, $e->getMessage());
-                $this->logger->error('BpMessage Email Template: Exception occurred', [
+                $failedLogIds[] = $log->getId();
+
+                // Set flag to skip remaining leads
+                $lotFailed = true;
+                $lotError = $e;
+
+                $this->logger->error('BpMessage Email Template: LOT CREATION FAILED - Leads will be available for retry', [
+                    'campaign_id' => $campaign->getId(),
+                    'lot_id' => $e->getLotId(),
+                    'error' => $e->getMessage(),
+                    'is_config_error' => $e->isConfigurationError(),
+                    'affected_leads' => is_countable($logs) ? count($logs) : 'unknown',
+                ]);
+
+                // Continue to mark remaining logs as failed (temporarily)
+                $this->logger->warning('BpMessage Email Template: Marking remaining leads for retry');
+            } catch (\Exception $e) {
+                // Lead-specific error - mark this lead as failed permanently
+                $event->fail($log, $e->getMessage());
+                $this->logger->error('BpMessage Email Template: Lead-specific exception occurred', [
                     'lead_id' => $lead->getId(),
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+
+        // Reset date_triggered for lot creation failures to allow retry
+        // This is done BEFORE Mautic writes to failed_log table
+        if (!empty($failedLogIds)) {
+            $this->connection->executeStatement(
+                'UPDATE campaign_lead_event_log SET date_triggered = NULL WHERE id IN (?)',
+                [$failedLogIds],
+                [Connection::PARAM_INT_ARRAY]
+            );
+
+            $this->logger->info('BpMessage Email Template: Reset logs for retry', [
+                'count' => count($failedLogIds),
+                'log_ids' => $failedLogIds,
+            ]);
         }
     }
 }

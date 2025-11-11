@@ -10,6 +10,7 @@ use Mautic\EmailBundle\Entity\Email;
 use Mautic\EmailBundle\Helper\MailHelper;
 use Mautic\LeadBundle\Entity\Lead;
 use Mautic\LeadBundle\Helper\TokenHelper;
+use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -37,10 +38,11 @@ class EmailTemplateMessageMapper
      * @param Lead $lead
      * @param array $config Action configuration
      * @param Campaign $campaign
+     * @param BpMessageLot|null $lot Optional lot to get book_business_foreign_id from
      * @return array BpMessage email data
      * @throws \InvalidArgumentException if required fields are missing
      */
-    public function mapLeadToEmail(Lead $lead, array $config, Campaign $campaign): array
+    public function mapLeadToEmail(Lead $lead, array $config, Campaign $campaign, ?BpMessageLot $lot = null): array
     {
         // Get email template
         $templateId = is_array($config['email_template']) ? reset($config['email_template']) : $config['email_template'];
@@ -79,8 +81,20 @@ class EmailTemplateMessageMapper
             'to' => $this->getToAddress($lead, $config, $contactValues),
             'subject' => $subject,
             'body' => $body,
-            'idForeignBookBusiness' => "MAUTIC-{$lead->getId()}",
         ];
+
+        // Get book_business_foreign_id from lot (if available) or config
+        $bookBusinessForeignId = null;
+        if ($lot && $lot->getBookBusinessForeignId()) {
+            $bookBusinessForeignId = $lot->getBookBusinessForeignId();
+        } elseif (!empty($config['book_business_foreign_id'])) {
+            $bookBusinessForeignId = $config['book_business_foreign_id'];
+        }
+
+        // Only add idForeignBookBusiness if it's provided and not empty
+        if (!empty($bookBusinessForeignId)) {
+            $email['idForeignBookBusiness'] = $bookBusinessForeignId;
+        }
 
         // Process additional_data and merge into email (contract, cpfCnpjReceiver, etc)
         $additionalData = $this->processAdditionalData($lead, $config);
@@ -174,12 +188,22 @@ class EmailTemplateMessageMapper
                 }
                 $key = $item['label'];
                 $value = $item['value'];
-                $processedData[$key] = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+                $processedValue = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+
+                // Only add if value is not empty
+                if (!empty($processedValue)) {
+                    $processedData[$key] = $processedValue;
+                }
             }
         } else {
             // New format: direct key => value
             foreach ($data as $key => $value) {
-                $processedData[$key] = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+                $processedValue = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+
+                // Only add if value is not empty
+                if (!empty($processedValue)) {
+                    $processedData[$key] = $processedValue;
+                }
             }
         }
 
@@ -236,24 +260,66 @@ class EmailTemplateMessageMapper
      */
     private function getContactValues(Lead $lead): array
     {
-        // Get all lead fields in the correct format for TokenHelper
-        $fields = $lead->getProfileFields();
+        // Try to get fields from Lead (for when loaded via LeadModel)
+        $fields = $lead->getFields(true);
+        $contactValues = [];
 
-        // Ensure basic fields are present
-        if (!isset($fields['id'])) {
-            $fields['id'] = $lead->getId();
-        }
-        if (!isset($fields['email']) && $lead->getEmail()) {
-            $fields['email'] = $lead->getEmail();
-        }
-        if (!isset($fields['firstname']) && $lead->getFirstname()) {
-            $fields['firstname'] = $lead->getFirstname();
-        }
-        if (!isset($fields['lastname']) && $lead->getLastname()) {
-            $fields['lastname'] = $lead->getLastname();
+        // Extract field values from getFields() if available
+        foreach ($fields as $fieldAlias => $fieldData) {
+            if (isset($fieldData['value'])) {
+                $contactValues[$fieldAlias] = $fieldData['value'];
+            }
         }
 
-        return $fields;
+        // If getFields() returned empty, try to get values directly from entity
+        // This handles cases where Lead is loaded directly from repository
+        if (empty($contactValues)) {
+            // Use reflection to get all properties
+            $reflection = new \ReflectionClass($lead);
+            $properties = $reflection->getProperties();
+
+            foreach ($properties as $property) {
+                $propertyName = $property->getName();
+
+                // Skip internal/protected fields
+                if (in_array($propertyName, ['id', 'changes', 'dateAdded', 'dateModified', 'createdBy', 'modifiedBy', 'checkedOut', 'checkedOutBy', 'fields', 'updatedFields', 'eventData'])) {
+                    continue;
+                }
+
+                // Try to get value via getter method
+                $getter = 'get' . ucfirst($propertyName);
+                if (method_exists($lead, $getter)) {
+                    try {
+                        // Only call getter if it doesn't require parameters
+                        $method = new \ReflectionMethod($lead, $getter);
+                        if ($method->getNumberOfRequiredParameters() === 0) {
+                            $value = $lead->$getter();
+                            if ($value !== null && !is_object($value) && !is_array($value)) {
+                                $contactValues[$propertyName] = $value;
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        // Skip if there's an error
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // Ensure basic fields are always present
+        $contactValues['id'] = $lead->getId();
+
+        if ($lead->getEmail()) {
+            $contactValues['email'] = $lead->getEmail();
+        }
+        if ($lead->getFirstname()) {
+            $contactValues['firstname'] = $lead->getFirstname();
+        }
+        if ($lead->getLastname()) {
+            $contactValues['lastname'] = $lead->getLastname();
+        }
+
+        return $contactValues;
     }
 
     /**
@@ -281,12 +347,22 @@ class EmailTemplateMessageMapper
                 }
                 $key = $item['label'];
                 $value = $item['value'];
-                $processedData[$key] = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+                $processedValue = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+
+                // Only add if value is not empty
+                if (!empty($processedValue)) {
+                    $processedData[$key] = $processedValue;
+                }
             }
         } else {
             // New format: direct key => value
             foreach ($data as $key => $value) {
-                $processedData[$key] = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+                $processedValue = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
+
+                // Only add if value is not empty
+                if (!empty($processedValue)) {
+                    $processedData[$key] = $processedValue;
+                }
             }
         }
 
