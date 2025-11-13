@@ -8,9 +8,48 @@ return [
     'version' => '1.0.0',
     'author' => 'Bellinati',
 
-    'routes' => [],
+    'routes' => [
+        'main' => [
+            'mautic_bpmessage_lot_index' => [
+                'path' => '/bpmessage/lots/{page}',
+                'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::indexAction',
+                'defaults' => ['page' => 1],
+            ],
+            'mautic_bpmessage_lot_view' => [
+                'path' => '/bpmessage/lot/{id}',
+                'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::viewAction',
+                'requirements' => ['id' => '\\d+'],
+            ],
+            'mautic_bpmessage_lot_reprocess' => [
+                'path' => '/bpmessage/lot/{id}/reprocess',
+                'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::reprocessAction',
+                'requirements' => ['id' => '\\d+'],
+            ],
+            'mautic_bpmessage_lot_process' => [
+                'path' => '/bpmessage/lots/process',
+                'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::processAction',
+            ],
+        ],
+    ],
 
-    'menu' => [],
+    'menu' => [
+        'main' => [
+            'items' => [
+                'mautic.bpmessage.menu.lots' => [
+                    'route' => 'mautic_bpmessage_lot_index',
+                    'parent' => 'mautic.core.channels',
+                    'priority' => 63,
+                    'checks' => [
+                        'integration' => [
+                            'BpMessage' => [
+                                'enabled' => true,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ],
 
     'services' => [
         'events' => [
@@ -126,6 +165,23 @@ return [
                     'monolog.logger.mautic',
                     'doctrine.orm.entity_manager',
                     'mautic.helper.mailer',
+                ],
+            ],
+        ],
+        'controllers' => [
+            'mautic.bpmessage.controller.batch' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Controller\BatchController::class,
+                'arguments' => [
+                    'doctrine',
+                    'translator',
+                    'mautic.core.service.flashbag',
+                    'twig',
+                    'mautic.bpmessage.model.bpmessage',
+                    'router',
+                ],
+                'public' => true,
+                'tags' => [
+                    'controller.service_arguments',
                 ],
             ],
         ],

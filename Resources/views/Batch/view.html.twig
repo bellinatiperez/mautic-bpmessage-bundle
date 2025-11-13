@@ -1,0 +1,207 @@
+{% extends '@MauticCore/Default/content.html.twig' %}
+
+{% block headerTitle %}
+    {{ 'mautic.bpmessage.lot.header.view'|trans({'%name%': lot.name}) }}
+{% endblock %}
+
+{% block actions %}
+    <div class="btn-group">
+        <a href="{{ path('mautic_bpmessage_lot_index') }}"
+           class="btn btn-default btn-sm"
+           data-toggle="ajax">
+            <i class="fa fa-arrow-left"></i> {{ 'mautic.core.back'|trans }}
+        </a>
+        {% if lot.status in ['FAILED', 'FINISHED'] and statistics.failed > 0 %}
+            <a href="{{ path('mautic_bpmessage_lot_reprocess', {'id': lot.id}) }}"
+               class="btn btn-warning btn-sm"
+               data-toggle="ajax"
+               data-method="POST">
+                <i class="fa fa-refresh"></i> {{ 'mautic.bpmessage.lot.reprocess'|trans }}
+            </a>
+        {% endif %}
+    </div>
+{% endblock %}
+
+{% block content %}
+<div class="pa-md">
+    {# Lot Information #}
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{{ 'mautic.bpmessage.lot.info'|trans }}</h3>
+        </div>
+        <div class="panel-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <dl class="dl-horizontal">
+                        <dt>{{ 'mautic.core.id'|trans }}:</dt>
+                        <dd>#{{ lot.id }}</dd>
+
+                        <dt>{{ 'mautic.core.name'|trans }}:</dt>
+                        <dd>{{ lot.name }}</dd>
+
+                        <dt>{{ 'mautic.bpmessage.lot.external_id'|trans }}:</dt>
+                        <dd>
+                            {% if lot.externalLotId %}
+                                <code>{{ lot.externalLotId }}</code>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt>{{ 'mautic.core.status'|trans }}:</dt>
+                        <dd>
+                            {% if lot.status == 'CREATING' %}
+                                <span class="label label-info">{{ 'mautic.bpmessage.lot.status.creating'|trans }}</span>
+                            {% elseif lot.status == 'OPEN' %}
+                                <span class="label label-warning">{{ 'mautic.bpmessage.lot.status.open'|trans }}</span>
+                            {% elseif lot.status == 'FINISHED' %}
+                                <span class="label label-success">{{ 'mautic.bpmessage.lot.status.finished'|trans }}</span>
+                            {% elseif lot.status == 'FAILED' %}
+                                <span class="label label-danger">{{ 'mautic.bpmessage.lot.status.failed'|trans }}</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt>{{ 'mautic.campaign.campaign'|trans }}:</dt>
+                        <dd>
+                            {% if lot.campaignId %}
+                                Campaign #{{ lot.campaignId }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt>{{ 'mautic.bpmessage.lot.user_cpf'|trans }}:</dt>
+                        <dd><code>{{ lot.userCpf }}</code></dd>
+                    </dl>
+                </div>
+                <div class="col-md-6">
+                    <dl class="dl-horizontal">
+                        <dt>{{ 'mautic.bpmessage.lot.api_url'|trans }}:</dt>
+                        <dd><code>{{ lot.apiBaseUrl }}</code></dd>
+
+                        <dt>{{ 'mautic.bpmessage.lot.batch_size'|trans }}:</dt>
+                        <dd>{{ lot.batchSize }}</dd>
+
+                        <dt>{{ 'mautic.bpmessage.lot.time_window'|trans }}:</dt>
+                        <dd>{{ lot.timeWindow }} {{ 'mautic.bpmessage.lot.seconds'|trans }}</dd>
+
+                        <dt>{{ 'mautic.core.date.added'|trans }}:</dt>
+                        <dd>{{ lot.createdAt|date('Y-m-d H:i:s') }}</dd>
+
+                        {% if lot.finishedAt %}
+                            <dt>{{ 'mautic.bpmessage.lot.finished_at'|trans }}:</dt>
+                            <dd>{{ lot.finishedAt|date('Y-m-d H:i:s') }}</dd>
+                        {% endif %}
+
+                        <dt>{{ 'mautic.bpmessage.lot.start_date'|trans }}:</dt>
+                        <dd>{{ lot.startDate|date('Y-m-d H:i:s') }}</dd>
+
+                        <dt>{{ 'mautic.bpmessage.lot.end_date'|trans }}:</dt>
+                        <dd>{{ lot.endDate|date('Y-m-d H:i:s') }}</dd>
+                    </dl>
+                </div>
+            </div>
+
+            {% if lot.errorMessage %}
+                <div class="alert alert-danger mt-3">
+                    <h4><i class="fa fa-exclamation-triangle"></i> {{ 'mautic.core.error'|trans }}</h4>
+                    <pre>{{ lot.errorMessage }}</pre>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Statistics #}
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{{ 'mautic.bpmessage.lot.statistics'|trans }}</h3>
+        </div>
+        <div class="panel-body">
+            <div class="row">
+                <div class="col-md-3 text-center">
+                    <h3>{{ statistics.total }}</h3>
+                    <p class="text-muted">{{ 'mautic.bpmessage.messages.total'|trans }}</p>
+                </div>
+                <div class="col-md-3 text-center">
+                    <h3 class="text-warning">{{ statistics.pending }}</h3>
+                    <p class="text-muted">{{ 'mautic.bpmessage.messages.pending'|trans }}</p>
+                </div>
+                <div class="col-md-3 text-center">
+                    <h3 class="text-success">{{ statistics.sent }}</h3>
+                    <p class="text-muted">{{ 'mautic.bpmessage.messages.sent'|trans }}</p>
+                </div>
+                <div class="col-md-3 text-center">
+                    <h3 class="text-danger">{{ statistics.failed }}</h3>
+                    <p class="text-muted">{{ 'mautic.bpmessage.messages.failed'|trans }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Messages List #}
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{{ 'mautic.bpmessage.lot.messages'|trans }}</h3>
+        </div>
+        <div class="panel-body">
+            {% if messages|length == 0 %}
+                <div class="alert alert-info">
+                    <i class="fa fa-info-circle"></i> {{ 'mautic.bpmessage.lot.messages.none'|trans }}
+                </div>
+            {% else %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered table-sm">
+                        <thead>
+                            <tr>
+                                <th>{{ 'mautic.core.id'|trans }}</th>
+                                <th>{{ 'mautic.lead.lead'|trans }}</th>
+                                <th>{{ 'mautic.core.email'|trans }}</th>
+                                <th>{{ 'mautic.core.status'|trans }}</th>
+                                <th>{{ 'mautic.bpmessage.retry_count'|trans }}</th>
+                                <th>{{ 'mautic.core.date.added'|trans }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for message in messages %}
+                                {% set lead = message.lead %}
+                                <tr>
+                                    <td>#{{ message.id }}</td>
+                                    <td>
+                                        <a href="{{ path('mautic_contact_action', {'objectAction': 'view', 'objectId': lead.id}) }}"
+                                           target="_blank">
+                                            {{ lead.firstname }} {{ lead.lastname }}
+                                        </a>
+                                    </td>
+                                    <td>{{ lead.email }}</td>
+                                    <td>
+                                        {% if message.status == 'PENDING' %}
+                                            <span class="label label-warning">{{ 'mautic.bpmessage.message.status.pending'|trans }}</span>
+                                        {% elseif message.status == 'SENT' %}
+                                            <span class="label label-success">{{ 'mautic.bpmessage.message.status.sent'|trans }}</span>
+                                        {% elseif message.status == 'FAILED' %}
+                                            <span class="label label-danger">{{ 'mautic.bpmessage.message.status.failed'|trans }}</span>
+                                        {% endif %}
+                                        {% if message.errorMessage %}
+                                            <i class="fa fa-info-circle text-danger"
+                                               title="{{ message.errorMessage }}"
+                                               data-toggle="tooltip"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if message.retryCount > 0 %}
+                                            <span class="badge badge-warning">{{ message.retryCount }}</span>
+                                        {% else %}
+                                            <span class="text-muted">0</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ message.createdAt|date('Y-m-d H:i:s') }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

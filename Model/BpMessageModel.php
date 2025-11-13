@@ -404,4 +404,62 @@ class BpMessageModel
             return false;
         }
     }
+
+    /**
+     * Process pending lots (OPEN lots that are ready to be closed)
+     *
+     * @param int $limit Maximum number of lots to process
+     * @return array ['processed' => int, 'succeeded' => int, 'failed' => int]
+     */
+    public function processPendingLots(int $limit = 10): array
+    {
+        // Find OPEN lots that should be closed (by time or count)
+        $qb = $this->em->createQueryBuilder();
+        $qb->select('l')
+            ->from(BpMessageLot::class, 'l')
+            ->where('l.status = :status')
+            ->setParameter('status', 'OPEN')
+            ->setMaxResults($limit);
+
+        $lots = $qb->getQuery()->getResult();
+
+        $stats = [
+            'processed' => 0,
+            'succeeded' => 0,
+            'failed' => 0,
+        ];
+
+        foreach ($lots as $lot) {
+            // Check if lot should be closed
+            if (!$lot->shouldCloseByTime() && !$lot->shouldCloseByCount()) {
+                continue;
+            }
+
+            ++$stats['processed'];
+
+            try {
+                $result = $this->lotManager->processLot($lot);
+
+                if ($result) {
+                    ++$stats['succeeded'];
+                    $this->logger->info('BpMessage: Lot processed successfully', [
+                        'lot_id' => $lot->getId(),
+                    ]);
+                } else {
+                    ++$stats['failed'];
+                    $this->logger->error('BpMessage: Failed to process lot', [
+                        'lot_id' => $lot->getId(),
+                    ]);
+                }
+            } catch (\Exception $e) {
+                ++$stats['failed'];
+                $this->logger->error('BpMessage: Exception while processing lot', [
+                    'lot_id' => $lot->getId(),
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $stats;
+    }
 }
