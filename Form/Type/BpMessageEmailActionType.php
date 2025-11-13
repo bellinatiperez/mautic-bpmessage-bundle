@@ -195,10 +195,7 @@ class BpMessageEmailActionType extends AbstractType
                     'tooltip' => 'mautic.bpmessage.form.email_body.tooltip',
                     'placeholder' => "<html>\n<body>\n  <h1>Hello {contactfield=firstname}!</h1>\n  <p>Your message here...</p>\n</body>\n</html>",
                 ],
-                'required' => true,
-                'constraints' => [
-                    new NotBlank(['message' => 'mautic.bpmessage.email_body.notblank']),
-                ],
+                'required' => false,
             ]
         );
 
