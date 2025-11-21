@@ -166,8 +166,44 @@ class LotManager
         // Create lot entity
         $lot = new BpMessageLot();
         $lot->setName($config['lot_name'] ?? "Campaign {$campaign->getName()}");
-        $lot->setStartDate(new \DateTime('now'));
-        $lot->setEndDate(new \DateTime('now')); // Same day to avoid API error
+
+        // Calculate startDate and endDate
+        $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300); // seconds
+        $now = new \DateTime('now');
+
+        // Check if lot_data has custom startDate/endDate
+        $startDate = $now;
+        $endDate = (clone $now)->modify("+{$timeWindow} seconds");
+
+        if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
+            // Check for startDate in lot_data
+            if (!empty($config['lot_data']['startDate'])) {
+                try {
+                    $startDate = new \DateTime($config['lot_data']['startDate']);
+                } catch (\Exception $e) {
+                    $this->logger->warning('BpMessage: Invalid startDate format, using current time', [
+                        'startDate' => $config['lot_data']['startDate'],
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // Check for endDate in lot_data
+            if (!empty($config['lot_data']['endDate'])) {
+                try {
+                    $endDate = new \DateTime($config['lot_data']['endDate']);
+                } catch (\Exception $e) {
+                    $this->logger->warning('BpMessage: Invalid endDate format, calculating from startDate + timeWindow', [
+                        'endDate' => $config['lot_data']['endDate'],
+                        'error' => $e->getMessage(),
+                    ]);
+                    $endDate = (clone $startDate)->modify("+{$timeWindow} seconds");
+                }
+            }
+        }
+
+        $lot->setStartDate($startDate);
+        $lot->setEndDate($endDate);
         $lot->setUserCpf('system'); // Fixed value for all lots
         $lot->setIdQuotaSettings((int) $config['id_quota_settings']);
         $lot->setIdServiceSettings((int) $config['id_service_settings']);
@@ -175,7 +211,7 @@ class LotManager
         $lot->setCampaignId($campaign->getId());
         $lot->setApiBaseUrl($config['api_base_url']);
         $lot->setBatchSize((int) ($config['batch_size'] ?? $config['default_batch_size'] ?? 1000));
-        $lot->setTimeWindow((int) ($config['time_window'] ?? $config['default_time_window'] ?? 300));
+        $lot->setTimeWindow($timeWindow);
         $lot->setStatus('CREATING');
 
         if (!empty($config['image_url'])) {
@@ -193,10 +229,17 @@ class LotManager
         // Call BpMessage API to create lot
         $this->client->setBaseUrl($config['api_base_url']);
 
+        // Format dates as ISO 8601 with milliseconds and Z timezone (UTC)
+        // Example: 2025-02-06T13:53:16.049Z
+        $startDateUTC = clone $lot->getStartDate();
+        $startDateUTC->setTimezone(new \DateTimeZone('UTC'));
+        $endDateUTC = clone $lot->getEndDate();
+        $endDateUTC->setTimezone(new \DateTimeZone('UTC'));
+
         $lotData = [
             'name' => $lot->getName(),
-            'startDate' => $lot->getStartDate()->format('c'),
-            'endDate' => $lot->getEndDate()->format('c'),
+            'startDate' => $startDateUTC->format('Y-m-d\TH:i:s.v\Z'),
+            'endDate' => $endDateUTC->format('Y-m-d\TH:i:s.v\Z'),
             'user' => 'system', // Fixed value
             'idQuotaSettings' => $lot->getIdQuotaSettings(),
             'idServiceSettings' => $lot->getIdServiceSettings(),

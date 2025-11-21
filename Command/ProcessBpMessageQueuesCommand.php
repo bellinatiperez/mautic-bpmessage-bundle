@@ -10,7 +10,6 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Command to process BpMessage queues (send pending messages)
@@ -85,44 +84,40 @@ EOT
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $io = new SymfonyStyle($input, $output);
-
-        $io->title('BpMessage Queue Processor');
-
         // Process specific lot
         if ($lotId = $input->getOption('lot-id')) {
-            return $this->processSpecificLot((int) $lotId, $io);
+            return $this->processSpecificLot((int) $lotId, $output);
         }
 
         // Retry failed messages
         if ($input->getOption('retry')) {
-            return $this->retryFailedMessages($input, $io);
+            return $this->retryFailedMessages($input, $output);
         }
 
         // Process open lots
-        return $this->processOpenLots($input, $io);
+        return $this->processOpenLots($input, $output);
     }
 
-    private function processSpecificLot(int $lotId, SymfonyStyle $io): int
+    private function processSpecificLot(int $lotId, OutputInterface $output): int
     {
-        $io->section("Processing lot #{$lotId}");
+        $output->writeln("Processing lot #{$lotId}");
 
         try {
             $success = $this->bpMessageModel->forceCloseLot($lotId);
 
             if ($success) {
-                $io->success("Lot #{$lotId} processed successfully");
+                $output->writeln("Lot #{$lotId} processed successfully");
                 return Command::SUCCESS;
             }
 
-            $io->error("Failed to process lot #{$lotId}");
+            $output->writeln("Failed to process lot #{$lotId}");
 
             // Try to get lot details to show error message
             $lot = $this->bpMessageModel->getLotById($lotId);
             if ($lot && $lot->getErrorMessage()) {
-                $io->warning("Error details:");
-                $io->writeln("<fg=red>{$lot->getErrorMessage()}</>");
-                $io->newLine();
+                $output->writeln("Error details:");
+                $output->writeln($lot->getErrorMessage());
+                $output->writeln('');
             }
 
             // Get failed messages details
@@ -139,84 +134,66 @@ EOT
                 ->getArrayResult();
 
             if (!empty($failedMessages)) {
-                $io->section('Failed Messages Sample (first 5):');
-                $tableData = [];
+                $output->writeln('Failed Messages Sample (first 5):');
                 foreach ($failedMessages as $msg) {
-                    $tableData[] = [
-                        $msg['id'],
-                        $msg['leadId'],
-                        $msg['retryCount'],
-                        substr($msg['errorMessage'] ?? 'No error message', 0, 80),
-                    ];
+                    $errorMsg = substr($msg['errorMessage'] ?? 'No error message', 0, 80);
+                    $output->writeln("  Queue ID: {$msg['id']}, Lead ID: {$msg['leadId']}, Retries: {$msg['retryCount']}, Error: {$errorMsg}");
                 }
-                $io->table(['Queue ID', 'Lead ID', 'Retries', 'Error Message'], $tableData);
+                $output->writeln('');
             }
 
-            $io->note("Fix the error and retry with: php bin/console mautic:bpmessage:process --lot-id={$lotId}");
-            $io->note("Or check logs: tail -100 var/logs/mautic_prod.log | grep 'lot.*{$lotId}'");
+            $output->writeln("Fix the error and retry with: php bin/console mautic:bpmessage:process --lot-id={$lotId}");
+            $output->writeln("Or check logs: tail -100 var/logs/mautic_prod.log | grep 'lot.*{$lotId}'");
+            $output->writeln('');
 
             return Command::FAILURE;
         } catch (\Exception $e) {
-            $io->error("Error processing lot #{$lotId}: {$e->getMessage()}");
-            $io->writeln("<comment>Exception type: " . get_class($e) . "</comment>");
-            $io->writeln("<comment>Stack trace:</comment>");
-            $io->writeln($e->getTraceAsString());
+            $output->writeln("Error processing lot #{$lotId}: {$e->getMessage()}");
+            $output->writeln("Exception type: " . get_class($e));
+            $output->writeln("Stack trace:");
+            $output->writeln($e->getTraceAsString());
             return Command::FAILURE;
         }
     }
 
-    private function retryFailedMessages(InputInterface $input, SymfonyStyle $io): int
+    private function retryFailedMessages(InputInterface $input, OutputInterface $output): int
     {
         $maxRetries = (int) $input->getOption('max-retries');
 
-        $io->section('Retrying Failed Messages');
-        $io->text("Maximum retries: {$maxRetries}");
+        $output->writeln('Retrying BpMessage failed messages');
+        $output->writeln("Maximum retries: {$maxRetries}");
 
         try {
             $retried = $this->bpMessageModel->retryFailedMessages($maxRetries);
 
-            if ($retried > 0) {
-                $io->success("Retried {$retried} failed messages");
-            } else {
-                $io->info('No failed messages to retry');
-            }
+            $output->writeln("{$retried} message(s) retried");
+            $output->writeln('');
 
             return Command::SUCCESS;
         } catch (\Exception $e) {
-            $io->error("Error retrying failed messages: {$e->getMessage()}");
+            $output->writeln("Error retrying failed messages: {$e->getMessage()}");
             return Command::FAILURE;
         }
     }
 
-    private function processOpenLots(InputInterface $input, SymfonyStyle $io): int
+    private function processOpenLots(InputInterface $input, OutputInterface $output): int
     {
         $forceClose = $input->getOption('force-close');
 
-        $io->section('Processing Open Lots');
-
-        if ($forceClose) {
-            $io->warning('Force close mode enabled - all open lots will be processed');
-        }
+        $output->writeln('Processing BpMessage open lots');
 
         try {
             // First, process orphaned CREATING lots (stuck lots)
-            $io->text('Checking for orphaned CREATING lots...');
             $orphanedStats = $this->bpMessageEmailModel->processOrphanedCreatingLots(5);
 
             if ($orphanedStats['processed'] > 0) {
-                $io->warning("Found {$orphanedStats['processed']} orphaned CREATING lots, marked {$orphanedStats['marked_failed']} as FAILED");
+                $output->writeln("{$orphanedStats['processed']} orphaned CREATING lot(s) found, {$orphanedStats['marked_failed']} marked as FAILED");
             }
 
-            // Check for lots with FAILED_CREATION status
-            $io->text('Checking for FAILED_CREATION lots...');
-            $io->comment('Hint: Run "php bin/console mautic:bpmessage:retry-failed-lots" to retry creating these lots');
-
             // Process regular message lots (SMS/WhatsApp/RCS)
-            $io->text('Processing message lots (SMS/WhatsApp/RCS)...');
             $messageStats = $this->bpMessageModel->processOpenLots($forceClose);
 
             // Process email lots
-            $io->text('Processing email lots...');
             $emailStats = $this->bpMessageEmailModel->processOpenLots($forceClose);
 
             // Combine statistics
@@ -226,29 +203,18 @@ EOT
                 'failed' => $messageStats['failed'] + $emailStats['failed'],
             ];
 
-            $io->table(
-                ['Metric', 'Count'],
-                [
-                    ['Message Lots Processed', $messageStats['processed']],
-                    ['Email Lots Processed', $emailStats['processed']],
-                    ['Total Lots Processed', $totalStats['processed']],
-                    ['Total Succeeded', $totalStats['succeeded']],
-                    ['Total Failed', $totalStats['failed']],
-                ]
-            );
+            $output->writeln("{$totalStats['processed']} total lot(s) processed in batches");
+            $output->writeln("{$totalStats['succeeded']} lot(s) succeeded");
 
-            if ($totalStats['processed'] === 0) {
-                $io->info('No lots to process');
-            } elseif ($totalStats['failed'] > 0) {
-                $io->warning("Processed {$totalStats['processed']} lots, but {$totalStats['failed']} failed");
-                return Command::FAILURE;
-            } else {
-                $io->success("Successfully processed {$totalStats['processed']} lots");
+            if ($totalStats['failed'] > 0) {
+                $output->writeln("{$totalStats['failed']} lot(s) failed");
             }
 
-            return Command::SUCCESS;
+            $output->writeln('');
+
+            return $totalStats['failed'] > 0 ? Command::FAILURE : Command::SUCCESS;
         } catch (\Exception $e) {
-            $io->error("Error processing lots: {$e->getMessage()}");
+            $output->writeln("Error processing lots: {$e->getMessage()}");
             return Command::FAILURE;
         }
     }
