@@ -116,9 +116,24 @@ EOT
             }
 
             $io->error("Failed to process lot #{$lotId}");
+
+            // Try to get lot details to show error message
+            $lot = $this->bpMessageModel->getLotById($lotId);
+            if ($lot && $lot->getErrorMessage()) {
+                $io->warning("Error details:");
+                $io->writeln("<fg=red>{$lot->getErrorMessage()}</>");
+                $io->newLine();
+                $io->note("Fix the error and retry with: php bin/console mautic:bpmessage:process --lot-id={$lotId}");
+            } else {
+                $io->note("Check logs at var/logs/mautic_prod.log for details");
+            }
+
             return Command::FAILURE;
         } catch (\Exception $e) {
             $io->error("Error processing lot #{$lotId}: {$e->getMessage()}");
+            $io->writeln("<comment>Exception type: " . get_class($e) . "</comment>");
+            $io->writeln("<comment>Stack trace:</comment>");
+            $io->writeln($e->getTraceAsString());
             return Command::FAILURE;
         }
     }

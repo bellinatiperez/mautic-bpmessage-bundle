@@ -203,6 +203,13 @@ return [
                 ],
                 'tag' => 'console.command',
             ],
+            'mautic.bpmessage.command.list_failed_lots' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Command\ListFailedLotsCommand::class,
+                'arguments' => [
+                    'doctrine.orm.entity_manager',
+                ],
+                'tag' => 'console.command',
+            ],
             'mautic.bpmessage.command.cleanup' => [
                 'class' => \MauticPlugin\MauticBpMessageBundle\Command\CleanupBpMessageCommand::class,
                 'arguments' => [

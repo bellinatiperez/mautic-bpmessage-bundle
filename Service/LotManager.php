@@ -446,6 +446,11 @@ class LotManager
             } else {
                 $success = false;
 
+                // Save error message to lot for user visibility
+                $errorMessage = "Batch {$batchIndex} failed: " . $result['error'];
+                $lot->setErrorMessage($errorMessage);
+                $lot->setStatus('FAILED');
+
                 // Mark messages as failed
                 foreach ($batch as $queue) {
                     $queue->markAsFailed($result['error']);

@@ -68,8 +68,16 @@
                                         <span class="label label-warning">{{ 'mautic.bpmessage.lot.status.open'|trans }}</span>
                                     {% elseif lot.status == 'FINISHED' %}
                                         <span class="label label-success">{{ 'mautic.bpmessage.lot.status.finished'|trans }}</span>
-                                    {% elseif lot.status == 'FAILED' %}
+                                    {% elseif lot.status == 'FAILED' or lot.status == 'FAILED_CREATION' %}
                                         <span class="label label-danger">{{ 'mautic.bpmessage.lot.status.failed'|trans }}</span>
+                                    {% endif %}
+
+                                    {# Show error icon if there's an error message #}
+                                    {% if lot.errorMessage %}
+                                        <i class="fa fa-exclamation-triangle text-danger"
+                                           data-toggle="tooltip"
+                                           title="{{ lot.errorMessage }}"
+                                           style="cursor: help; margin-left: 5px;"></i>
                                     {% endif %}
                                 </td>
                                 <td>

@@ -462,4 +462,17 @@ class BpMessageModel
 
         return $stats;
     }
+
+    /**
+     * Get a lot by ID
+     *
+     * @param int $lotId
+     * @return BpMessageLot|null
+     */
+    public function getLotById(int $lotId): ?BpMessageLot
+    {
+        /** @var BpMessageLotRepository $repository */
+        $repository = $this->em->getRepository(BpMessageLot::class);
+        return $repository->find($lotId);
+    }
 }
