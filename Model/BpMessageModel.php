@@ -475,4 +475,14 @@ class BpMessageModel
         $repository = $this->em->getRepository(BpMessageLot::class);
         return $repository->find($lotId);
     }
+
+    /**
+     * Get EntityManager
+     *
+     * @return EntityManager
+     */
+    public function getEntityManager(): EntityManager
+    {
+        return $this->em;
+    }
 }

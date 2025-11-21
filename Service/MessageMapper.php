@@ -36,9 +36,6 @@ class MessageMapper
         // Build base message with minimal required fields
         $message = [
             'control' => $config['control'] ?? true,
-            'metaData' => $this->buildMetaData($lead, $campaign),
-            'idForeignBookBusiness' => "MAUTIC-{$lead->getId()}",
-            'contactName' => trim(($lead->getFirstname() ?? '') . ' ' . ($lead->getLastname() ?? '')),
         ];
 
         // Add service type

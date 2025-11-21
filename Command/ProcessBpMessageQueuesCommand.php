@@ -123,10 +123,37 @@ EOT
                 $io->warning("Error details:");
                 $io->writeln("<fg=red>{$lot->getErrorMessage()}</>");
                 $io->newLine();
-                $io->note("Fix the error and retry with: php bin/console mautic:bpmessage:process --lot-id={$lotId}");
-            } else {
-                $io->note("Check logs at var/logs/mautic_prod.log for details");
             }
+
+            // Get failed messages details
+            $em = $this->bpMessageModel->getEntityManager();
+            $failedMessages = $em->createQueryBuilder()
+                ->select('q.id', 'q.leadId', 'q.errorMessage', 'q.retryCount')
+                ->from('MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue', 'q')
+                ->where('q.lot = :lotId')
+                ->andWhere('q.status = :status')
+                ->setParameter('lotId', $lotId)
+                ->setParameter('status', 'FAILED')
+                ->setMaxResults(5)
+                ->getQuery()
+                ->getArrayResult();
+
+            if (!empty($failedMessages)) {
+                $io->section('Failed Messages Sample (first 5):');
+                $tableData = [];
+                foreach ($failedMessages as $msg) {
+                    $tableData[] = [
+                        $msg['id'],
+                        $msg['leadId'],
+                        $msg['retryCount'],
+                        substr($msg['errorMessage'] ?? 'No error message', 0, 80),
+                    ];
+                }
+                $io->table(['Queue ID', 'Lead ID', 'Retries', 'Error Message'], $tableData);
+            }
+
+            $io->note("Fix the error and retry with: php bin/console mautic:bpmessage:process --lot-id={$lotId}");
+            $io->note("Or check logs: tail -100 var/logs/mautic_prod.log | grep 'lot.*{$lotId}'");
 
             return Command::FAILURE;
         } catch (\Exception $e) {

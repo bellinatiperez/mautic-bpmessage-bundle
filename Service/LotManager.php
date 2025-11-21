@@ -555,7 +555,12 @@ class LotManager
 
         if (!$success) {
             $lot->setStatus('FAILED');
-            $lot->setErrorMessage('Failed to send messages');
+
+            // Only set generic error if no specific error was set during sendLotMessages
+            if (!$lot->getErrorMessage()) {
+                $lot->setErrorMessage('Failed to send messages - check individual message errors');
+            }
+
             $this->entityManager->flush();
 
             return false;
