@@ -165,6 +165,10 @@ EOT
                 $io->warning("Found {$orphanedStats['processed']} orphaned CREATING lots, marked {$orphanedStats['marked_failed']} as FAILED");
             }
 
+            // Check for lots with FAILED_CREATION status
+            $io->text('Checking for FAILED_CREATION lots...');
+            $io->comment('Hint: Run "php bin/console mautic:bpmessage:retry-failed-lots" to retry creating these lots');
+
             // Process regular message lots (SMS/WhatsApp/RCS)
             $io->text('Processing message lots (SMS/WhatsApp/RCS)...');
             $messageStats = $this->bpMessageModel->processOpenLots($forceClose);

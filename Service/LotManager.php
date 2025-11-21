@@ -73,6 +73,43 @@ class LotManager
             return $lot;
         }
 
+        // Check if there's a FAILED_CREATION lot that can be reused
+        // These lots failed during API call but can accept contacts for later retry
+        // Reuse recent FAILED_CREATION lots (within last 24 hours) to avoid creating multiple failed lots
+        $failedThreshold = new \DateTime('-24 hours');
+        $qbFailed = $this->entityManager->createQueryBuilder();
+        $qbFailed->select('l')
+            ->from(BpMessageLot::class, 'l')
+            ->where('l.campaignId = :campaignId')
+            ->andWhere('l.status = :status')
+            ->andWhere('l.idQuotaSettings = :idQuotaSettings')
+            ->andWhere('l.idServiceSettings = :idServiceSettings')
+            ->andWhere('l.serviceType = :serviceType')
+            ->andWhere('l.createdAt > :threshold')
+            ->andWhere('l.messagesCount < :maxCount')
+            ->setParameter('campaignId', $campaign->getId())
+            ->setParameter('status', 'FAILED_CREATION')
+            ->setParameter('idQuotaSettings', (int) $config['id_quota_settings'])
+            ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
+            ->setParameter('serviceType', (int) ($config['service_type'] ?? 2))
+            ->setParameter('threshold', $failedThreshold)
+            ->setParameter('maxCount', 10000) // Don't reuse if too many messages accumulated
+            ->orderBy('l.createdAt', 'DESC')
+            ->setMaxResults(1);
+
+        $failedLot = $qbFailed->getQuery()->getOneOrNullResult();
+
+        if (null !== $failedLot) {
+            $this->logger->info('BpMessage: Reusing FAILED_CREATION lot - contacts will be queued for retry', [
+                'lot_id' => $failedLot->getId(),
+                'campaign_id' => $campaign->getId(),
+                'messages_count' => $failedLot->getMessagesCount(),
+                'error' => $failedLot->getErrorMessage(),
+            ]);
+
+            return $failedLot;
+        }
+
         // Check if there's a recent CREATING lot (within last 60 seconds) to prevent duplicates
         // This happens when multiple leads are processed in quick succession
         // Must match same configuration: idQuotaSettings + idServiceSettings + serviceType
@@ -182,11 +219,20 @@ class LotManager
             $result = $this->client->createLot($lotData);
 
             if (!$result['success']) {
-                $lot->setStatus('FAILED');
+                // IMPORTANT: Mark as FAILED but DON'T throw exception
+                // This allows contacts to be queued for later retry
+                $lot->setStatus('FAILED_CREATION');
                 $lot->setErrorMessage($result['error']);
                 $this->entityManager->flush();
 
-                throw new \RuntimeException("Failed to create lot in BpMessage: {$result['error']}");
+                $this->logger->warning('BpMessage: Failed to create lot in API, contacts will be queued for retry', [
+                    'lot_id' => $lot->getId(),
+                    'error' => $result['error'],
+                ]);
+
+                // Return lot with FAILED_CREATION status
+                // Contacts will be queued and can be retried later
+                return $lot;
             }
 
             // Update lot with external ID
@@ -216,18 +262,21 @@ class LotManager
 
             return $lot;
         } catch (\Exception $e) {
-            // If any exception occurs during API call, mark lot as FAILED
-            $lot->setStatus('FAILED');
+            // If any exception occurs during API call, mark lot as FAILED_CREATION
+            // This allows contacts to be queued for later retry
+            $lot->setStatus('FAILED_CREATION');
             $lot->setErrorMessage('API call exception: ' . $e->getMessage());
             $this->entityManager->persist($lot);
             $this->entityManager->flush();
 
-            $this->logger->error('BpMessage: Exception during lot creation', [
+            $this->logger->error('BpMessage: Exception during lot creation, contacts will be queued for retry', [
                 'lot_id' => $lot->getId(),
                 'error' => $e->getMessage(),
             ]);
 
-            throw $e;
+            // Return lot with FAILED_CREATION status instead of throwing
+            // This allows contacts to be queued and retried later
+            return $lot;
         }
     }
 

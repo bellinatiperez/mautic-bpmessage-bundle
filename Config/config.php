@@ -194,6 +194,15 @@ return [
                 ],
                 'tag' => 'console.command',
             ],
+            'mautic.bpmessage.command.retry_failed_lots' => [
+                'class' => \MauticPlugin\MauticBpMessageBundle\Command\RetryFailedLotsCommand::class,
+                'arguments' => [
+                    'doctrine.orm.entity_manager',
+                    'mautic.bpmessage.http.client',
+                    'monolog.logger.mautic',
+                ],
+                'tag' => 'console.command',
+            ],
             'mautic.bpmessage.command.cleanup' => [
                 'class' => \MauticPlugin\MauticBpMessageBundle\Command\CleanupBpMessageCommand::class,
                 'arguments' => [
