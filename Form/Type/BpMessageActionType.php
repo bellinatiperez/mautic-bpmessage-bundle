@@ -36,7 +36,8 @@ class BpMessageActionType extends AbstractType
                 ],
                 'attr' => ['class' => 'form-control'],
                 'required' => true,
-                'data' => 2, // Default to WhatsApp
+                'empty_data' => '2', // Default to WhatsApp only when empty
+                'placeholder' => false, // Don't show "Choose an option"
             ]
         );
         
