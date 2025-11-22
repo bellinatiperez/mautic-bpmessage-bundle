@@ -108,6 +108,7 @@ EOT
 
             if (null === $lot) {
                 $output->writeln("Error: Lot #{$lotId} not found");
+
                 return Command::FAILURE;
             }
 
