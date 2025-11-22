@@ -138,10 +138,78 @@
         </div>
     </div>
 
+    {# Failed Messages Section #}
+    {% if statistics.failed > 0 %}
+    <div class="panel panel-danger">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <i class="fa fa-exclamation-triangle"></i> {{ 'mautic.bpmessage.lot.failed_messages'|trans }} ({{ statistics.failed }})
+            </h3>
+        </div>
+        <div class="panel-body">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered table-sm">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">{{ 'mautic.core.id'|trans }}</th>
+                            <th style="width: 200px;">{{ 'mautic.lead.lead'|trans }}</th>
+                            <th style="width: 100px;">{{ 'mautic.bpmessage.retry_count'|trans }}</th>
+                            <th>{{ 'mautic.bpmessage.error_message'|trans }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for message in messages %}
+                            {% if message.status == 'FAILED' %}
+                            {% set lead = message.lead %}
+                            <tr>
+                                <td><code>#{{ message.id }}</code></td>
+                                <td>
+                                    <a href="{{ path('mautic_contact_action', {'objectAction': 'view', 'objectId': lead.id}) }}"
+                                       target="_blank"
+                                       class="text-danger">
+                                        <i class="fa fa-user"></i> {{ lead.firstname }} {{ lead.lastname }}
+                                    </a>
+                                    <br>
+                                    <small class="text-muted">{{ lead.email }}</small>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-danger">{{ message.retryCount }}</span>
+                                </td>
+                                <td>
+                                    {% if message.errorMessage %}
+                                        <div class="alert alert-danger mb-0" style="padding: 8px;">
+                                            <i class="fa fa-times-circle"></i>
+                                            <strong>{{ message.errorMessage|slice(0, 200) }}</strong>
+                                            {% if message.errorMessage|length > 200 %}
+                                                <a href="#" onclick="alert('{{ message.errorMessage|escape('js') }}'); return false;" class="text-danger">
+                                                    <i class="fa fa-plus-circle"></i> Ver completo
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted">{{ 'mautic.bpmessage.no_error_message'|trans }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="alert alert-info mt-3 mb-0">
+                <i class="fa fa-info-circle"></i>
+                <strong>{{ 'mautic.bpmessage.fix_and_retry'|trans }}</strong>
+                <br>
+                {{ 'mautic.bpmessage.fix_and_retry_help'|trans({'%id%': lot.id}) }}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {# Messages List #}
     <div class="panel panel-default">
         <div class="panel-heading">
-            <h3 class="panel-title">{{ 'mautic.bpmessage.lot.messages'|trans }}</h3>
+            <h3 class="panel-title">{{ 'mautic.bpmessage.lot.messages'|trans }} ({{ messages|length }})</h3>
         </div>
         <div class="panel-body">
             {% if messages|length == 0 %}

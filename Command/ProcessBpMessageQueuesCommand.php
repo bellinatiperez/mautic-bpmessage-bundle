@@ -123,7 +123,7 @@ EOT
             // Get failed messages details
             $em = $this->bpMessageModel->getEntityManager();
             $failedMessages = $em->createQueryBuilder()
-                ->select('q.id', 'q.leadId', 'q.errorMessage', 'q.retryCount')
+                ->select('q.id', 'IDENTITY(q.lead) as leadId', 'q.errorMessage', 'q.retryCount')
                 ->from('MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue', 'q')
                 ->where('q.lot = :lotId')
                 ->andWhere('q.status = :status')
