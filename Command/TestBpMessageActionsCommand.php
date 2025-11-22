@@ -28,12 +28,12 @@ class TestBpMessageActionsCommand extends Command
         EntityManagerInterface $em,
         MessageMapper $messageMapper,
         EmailMessageMapper $emailMessageMapper,
-        EmailTemplateMessageMapper $emailTemplateMessageMapper
+        EmailTemplateMessageMapper $emailTemplateMessageMapper,
     ) {
         parent::__construct();
-        $this->em = $em;
-        $this->messageMapper = $messageMapper;
-        $this->emailMessageMapper = $emailMessageMapper;
+        $this->em                         = $em;
+        $this->messageMapper              = $messageMapper;
+        $this->emailMessageMapper         = $emailMessageMapper;
         $this->emailTemplateMessageMapper = $emailTemplateMessageMapper;
     }
 
@@ -44,16 +44,15 @@ class TestBpMessageActionsCommand extends Command
             ->setDescription('Test BpMessage actions and show request payloads')
             ->addOption('contacts', 'c', InputOption::VALUE_OPTIONAL, 'Number of contacts to test', 3)
             ->addOption('action', 'a', InputOption::VALUE_OPTIONAL, 'Action to test (message|email|template|all)', 'all')
-            ->addOption('template-id', 't', InputOption::VALUE_OPTIONAL, 'Email template ID for template action', null)
-        ;
+            ->addOption('template-id', 't', InputOption::VALUE_OPTIONAL, 'Email template ID for template action', null);
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $io = new SymfonyStyle($input, $output);
+        $io            = new SymfonyStyle($input, $output);
         $contactsCount = (int) $input->getOption('contacts');
-        $action = $input->getOption('action');
-        $templateId = $input->getOption('template-id');
+        $action        = $input->getOption('action');
+        $templateId    = $input->getOption('template-id');
 
         $io->title('BpMessage Actions Test');
 
@@ -62,6 +61,7 @@ class TestBpMessageActionsCommand extends Command
 
         if (empty($leads)) {
             $io->error('No contacts found in database');
+
             return Command::FAILURE;
         }
 
@@ -80,15 +80,15 @@ class TestBpMessageActionsCommand extends Command
         $campaign->setName('Test Campaign');
 
         // Test different actions
-        if ($action === 'all' || $action === 'message') {
+        if ('all' === $action || 'message' === $action) {
             $this->testMessageAction($io, $leads, $campaign);
         }
 
-        if ($action === 'all' || $action === 'email') {
+        if ('all' === $action || 'email' === $action) {
             $this->testEmailAction($io, $leads, $campaign);
         }
 
-        if ($action === 'all' || $action === 'template') {
+        if ('all' === $action || 'template' === $action) {
             $this->testEmailTemplateAction($io, $leads, $campaign, $templateId);
         }
 
@@ -102,14 +102,14 @@ class TestBpMessageActionsCommand extends Command
         $io->section('1. Send BpMessage (SMS/WhatsApp/RCS)');
 
         $config = [
-            'service_type' => 2, // WhatsApp
-            'message_text' => 'Olá {contactfield=firstname}, tudo bem?',
-            'id_quota_settings' => 123,
+            'service_type'        => 2, // WhatsApp
+            'message_text'        => 'Olá {contactfield=firstname}, tudo bem?',
+            'id_quota_settings'   => 123,
             'id_service_settings' => 456,
-            'additional_data' => [
+            'additional_data'     => [
                 'contract' => '{contactfield=contract_number}',
-                'cpf' => '{contactfield=cpf}',
-                'phone' => '{contactfield=mobile}',
+                'cpf'      => '{contactfield=cpf}',
+                'phone'    => '{contactfield=mobile}',
             ],
         ];
 
@@ -125,7 +125,7 @@ class TestBpMessageActionsCommand extends Command
                 $io->writeln(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
                 $io->newLine();
             } catch (\Exception $e) {
-                $io->error("Failed to map contact {$lead->getId()}: " . $e->getMessage());
+                $io->error("Failed to map contact {$lead->getId()}: ".$e->getMessage());
             }
         }
     }
@@ -136,12 +136,12 @@ class TestBpMessageActionsCommand extends Command
 
         $config = [
             'id_service_settings' => 789,
-            'email_from' => 'noreply@example.com',
-            'email_to' => '{contactfield=email}',
-            'email_subject' => 'Hello {contactfield=firstname}!',
-            'email_body' => '<html><body><h1>Hello {contactfield=firstname}!</h1><p>This is a test email.</p></body></html>',
-            'additional_data' => [
-                'contract' => '{contactfield=contract_number}',
+            'email_from'          => 'noreply@example.com',
+            'email_to'            => '{contactfield=email}',
+            'email_subject'       => 'Hello {contactfield=firstname}!',
+            'email_body'          => '<html><body><h1>Hello {contactfield=firstname}!</h1><p>This is a test email.</p></body></html>',
+            'additional_data'     => [
+                'contract'        => '{contactfield=contract_number}',
                 'cpfCnpjReceiver' => '{contactfield=cpf}',
             ],
         ];
@@ -157,12 +157,12 @@ class TestBpMessageActionsCommand extends Command
                 $io->writeln(sprintf('<comment>Contact #%d (ID: %d):</comment>', $index + 1, $lead->getId()));
                 // Truncate body for readability
                 if (isset($payload['body']) && strlen($payload['body']) > 100) {
-                    $payload['body'] = substr($payload['body'], 0, 100) . '... [truncated]';
+                    $payload['body'] = substr($payload['body'], 0, 100).'... [truncated]';
                 }
                 $io->writeln(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
                 $io->newLine();
             } catch (\Exception $e) {
-                $io->error("Failed to map contact {$lead->getId()}: " . $e->getMessage());
+                $io->error("Failed to map contact {$lead->getId()}: ".$e->getMessage());
             }
         }
     }
@@ -183,6 +183,7 @@ class TestBpMessageActionsCommand extends Command
 
             if (!$template) {
                 $io->warning('No email template found. Create one in Mautic first or use --template-id option.');
+
                 return;
             }
 
@@ -190,11 +191,11 @@ class TestBpMessageActionsCommand extends Command
         }
 
         $config = [
-            'email_template' => $templateId,
+            'email_template'      => $templateId,
             'id_service_settings' => 789,
-            'email_from' => '', // Will use template default
-            'email_to' => '', // Will use contact email
-            'additional_data' => [
+            'email_from'          => '', // Will use template default
+            'email_to'            => '', // Will use contact email
+            'additional_data'     => [
                 'contract' => '{contactfield=contract_number}',
             ],
         ];
@@ -211,12 +212,12 @@ class TestBpMessageActionsCommand extends Command
                 $io->writeln(sprintf('<comment>Contact #%d (ID: %d):</comment>', $index + 1, $lead->getId()));
                 // Truncate body for readability
                 if (isset($payload['body']) && strlen($payload['body']) > 100) {
-                    $payload['body'] = substr($payload['body'], 0, 100) . '... [truncated]';
+                    $payload['body'] = substr($payload['body'], 0, 100).'... [truncated]';
                 }
                 $io->writeln(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
                 $io->newLine();
             } catch (\Exception $e) {
-                $io->error("Failed to map contact {$lead->getId()}: " . $e->getMessage());
+                $io->error("Failed to map contact {$lead->getId()}: ".$e->getMessage());
             }
         }
     }

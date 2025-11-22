@@ -10,16 +10,19 @@ use Doctrine\ORM\Mapping as ORM;
 use Mautic\CoreBundle\Doctrine\Mapping\ClassMetadataBuilder;
 
 /**
- * Entity representing a BpMessage batch/lot
+ * Entity representing a BpMessage batch/lot.
  *
  * @ORM\Entity
+ *
  * @ORM\Table(name="bpmessage_lot")
  */
 class BpMessageLot
 {
     /**
      * @ORM\Id
+     *
      * @ORM\GeneratedValue(strategy="AUTO")
+     *
      * @ORM\Column(type="integer")
      */
     private ?int $id = null;
@@ -137,7 +140,7 @@ class BpMessageLot
     public function __construct()
     {
         $this->queueItems = new ArrayCollection();
-        $this->createdAt = new \DateTime();
+        $this->createdAt  = new \DateTime();
     }
 
     public static function loadMetadata(ORM\ClassMetadata $metadata): void
@@ -188,6 +191,7 @@ class BpMessageLot
     public function setExternalLotId(?string $externalLotId): self
     {
         $this->externalLotId = $externalLotId;
+
         return $this;
     }
 
@@ -199,6 +203,7 @@ class BpMessageLot
     public function setName(string $name): self
     {
         $this->name = $name;
+
         return $this;
     }
 
@@ -210,6 +215,7 @@ class BpMessageLot
     public function setStartDate(\DateTime $startDate): self
     {
         $this->startDate = $startDate;
+
         return $this;
     }
 
@@ -221,6 +227,7 @@ class BpMessageLot
     public function setEndDate(\DateTime $endDate): self
     {
         $this->endDate = $endDate;
+
         return $this;
     }
 
@@ -232,6 +239,7 @@ class BpMessageLot
     public function setUserCpf(string $userCpf): self
     {
         $this->userCpf = $userCpf;
+
         return $this;
     }
 
@@ -243,6 +251,7 @@ class BpMessageLot
     public function setIdQuotaSettings(int $idQuotaSettings): self
     {
         $this->idQuotaSettings = $idQuotaSettings;
+
         return $this;
     }
 
@@ -254,6 +263,7 @@ class BpMessageLot
     public function setIdServiceSettings(int $idServiceSettings): self
     {
         $this->idServiceSettings = $idServiceSettings;
+
         return $this;
     }
 
@@ -265,6 +275,7 @@ class BpMessageLot
     public function setServiceType(?int $serviceType): self
     {
         $this->serviceType = $serviceType;
+
         return $this;
     }
 
@@ -276,6 +287,7 @@ class BpMessageLot
     public function setIdBookBusinessSendGroup(?int $idBookBusinessSendGroup): self
     {
         $this->idBookBusinessSendGroup = $idBookBusinessSendGroup;
+
         return $this;
     }
 
@@ -287,6 +299,7 @@ class BpMessageLot
     public function setBookBusinessForeignId(?string $bookBusinessForeignId): self
     {
         $this->bookBusinessForeignId = $bookBusinessForeignId;
+
         return $this;
     }
 
@@ -298,6 +311,7 @@ class BpMessageLot
     public function setImageUrl(?string $imageUrl): self
     {
         $this->imageUrl = $imageUrl;
+
         return $this;
     }
 
@@ -309,6 +323,7 @@ class BpMessageLot
     public function setImageName(?string $imageName): self
     {
         $this->imageName = $imageName;
+
         return $this;
     }
 
@@ -320,6 +335,7 @@ class BpMessageLot
     public function setStatus(string $status): self
     {
         $this->status = $status;
+
         return $this;
     }
 
@@ -331,12 +347,14 @@ class BpMessageLot
     public function setMessagesCount(int $messagesCount): self
     {
         $this->messagesCount = $messagesCount;
+
         return $this;
     }
 
     public function incrementMessagesCount(): self
     {
         ++$this->messagesCount;
+
         return $this;
     }
 
@@ -348,6 +366,7 @@ class BpMessageLot
     public function setCreatedAt(\DateTime $createdAt): self
     {
         $this->createdAt = $createdAt;
+
         return $this;
     }
 
@@ -359,6 +378,7 @@ class BpMessageLot
     public function setFinishedAt(?\DateTime $finishedAt): self
     {
         $this->finishedAt = $finishedAt;
+
         return $this;
     }
 
@@ -370,6 +390,7 @@ class BpMessageLot
     public function setCampaignId(?int $campaignId): self
     {
         $this->campaignId = $campaignId;
+
         return $this;
     }
 
@@ -381,6 +402,7 @@ class BpMessageLot
     public function setApiBaseUrl(string $apiBaseUrl): self
     {
         $this->apiBaseUrl = $apiBaseUrl;
+
         return $this;
     }
 
@@ -392,6 +414,7 @@ class BpMessageLot
     public function setBatchSize(int $batchSize): self
     {
         $this->batchSize = $batchSize;
+
         return $this;
     }
 
@@ -403,6 +426,7 @@ class BpMessageLot
     public function setTimeWindow(int $timeWindow): self
     {
         $this->timeWindow = $timeWindow;
+
         return $this;
     }
 
@@ -414,6 +438,7 @@ class BpMessageLot
     public function setErrorMessage(?string $errorMessage): self
     {
         $this->errorMessage = $errorMessage;
+
         return $this;
     }
 
@@ -444,17 +469,18 @@ class BpMessageLot
     }
 
     /**
-     * Check if lot should be closed based on time window
+     * Check if lot should be closed based on time window.
      */
     public function shouldCloseByTime(): bool
     {
-        $now = new \DateTime();
+        $now     = new \DateTime();
         $elapsed = $now->getTimestamp() - $this->createdAt->getTimestamp();
+
         return $elapsed >= $this->timeWindow;
     }
 
     /**
-     * Check if lot should be closed based on message count
+     * Check if lot should be closed based on message count.
      */
     public function shouldCloseByCount(): bool
     {
@@ -462,7 +488,7 @@ class BpMessageLot
     }
 
     /**
-     * Check if lot is open and accepting messages
+     * Check if lot is open and accepting messages.
      */
     public function isOpen(): bool
     {
@@ -470,7 +496,7 @@ class BpMessageLot
     }
 
     /**
-     * Check if lot is finished
+     * Check if lot is finished.
      */
     public function isFinished(): bool
     {
@@ -478,7 +504,7 @@ class BpMessageLot
     }
 
     /**
-     * Check if lot has failed
+     * Check if lot has failed.
      */
     public function isFailed(): bool
     {

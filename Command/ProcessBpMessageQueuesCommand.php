@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace MauticPlugin\MauticBpMessageBundle\Command;
 
-use MauticPlugin\MauticBpMessageBundle\Model\BpMessageModel;
 use MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailModel;
+use MauticPlugin\MauticBpMessageBundle\Model\BpMessageModel;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Command to process BpMessage queues (send pending messages)
+ * Command to process BpMessage queues (send pending messages).
  */
 class ProcessBpMessageQueuesCommand extends Command
 {
@@ -21,9 +21,9 @@ class ProcessBpMessageQueuesCommand extends Command
 
     public function __construct(
         BpMessageModel $bpMessageModel,
-        BpMessageEmailModel $bpMessageEmailModel
+        BpMessageEmailModel $bpMessageEmailModel,
     ) {
-        $this->bpMessageModel = $bpMessageModel;
+        $this->bpMessageModel      = $bpMessageModel;
         $this->bpMessageEmailModel = $bpMessageEmailModel;
         parent::__construct();
     }
@@ -107,6 +107,7 @@ EOT
 
             if ($success) {
                 $output->writeln("Lot #{$lotId} processed successfully");
+
                 return Command::SUCCESS;
             }
 
@@ -115,13 +116,13 @@ EOT
             // Try to get lot details to show error message
             $lot = $this->bpMessageModel->getLotById($lotId);
             if ($lot && $lot->getErrorMessage()) {
-                $output->writeln("Error details:");
+                $output->writeln('Error details:');
                 $output->writeln($lot->getErrorMessage());
                 $output->writeln('');
             }
 
             // Get failed messages details
-            $em = $this->bpMessageModel->getEntityManager();
+            $em             = $this->bpMessageModel->getEntityManager();
             $failedMessages = $em->createQueryBuilder()
                 ->select('q.id', 'IDENTITY(q.lead) as leadId', 'q.errorMessage', 'q.retryCount')
                 ->from('MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue', 'q')
@@ -149,9 +150,10 @@ EOT
             return Command::FAILURE;
         } catch (\Exception $e) {
             $output->writeln("Error processing lot #{$lotId}: {$e->getMessage()}");
-            $output->writeln("Exception type: " . get_class($e));
-            $output->writeln("Stack trace:");
+            $output->writeln('Exception type: '.get_class($e));
+            $output->writeln('Stack trace:');
             $output->writeln($e->getTraceAsString());
+
             return Command::FAILURE;
         }
     }
@@ -172,6 +174,7 @@ EOT
             return Command::SUCCESS;
         } catch (\Exception $e) {
             $output->writeln("Error retrying failed messages: {$e->getMessage()}");
+
             return Command::FAILURE;
         }
     }
@@ -200,7 +203,7 @@ EOT
             $totalStats = [
                 'processed' => $messageStats['processed'] + $emailStats['processed'],
                 'succeeded' => $messageStats['succeeded'] + $emailStats['succeeded'],
-                'failed' => $messageStats['failed'] + $emailStats['failed'],
+                'failed'    => $messageStats['failed'] + $emailStats['failed'],
             ];
 
             $output->writeln("{$totalStats['processed']} total lot(s) processed in batches");
@@ -215,6 +218,7 @@ EOT
             return $totalStats['failed'] > 0 ? Command::FAILURE : Command::SUCCESS;
         } catch (\Exception $e) {
             $output->writeln("Error processing lots: {$e->getMessage()}");
+
             return Command::FAILURE;
         }
     }

@@ -14,7 +14,7 @@ use Symfony\Component\Validator\Constraints\Email;
 use Symfony\Component\Validator\Constraints\NotBlank;
 
 /**
- * Form type for BpMessage email campaign action
+ * Form type for BpMessage email campaign action.
  */
 class BpMessageEmailActionType extends AbstractType
 {
@@ -25,10 +25,10 @@ class BpMessageEmailActionType extends AbstractType
             'lot_name',
             TextType::class,
             [
-                'label' => 'mautic.bpmessage.form.lot_name',
+                'label'      => 'mautic.bpmessage.form.lot_name',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
+                'attr'       => [
+                    'class'   => 'form-control',
                     'tooltip' => 'mautic.bpmessage.form.lot_name.tooltip',
                 ],
                 'required' => false,
@@ -41,8 +41,8 @@ class BpMessageEmailActionType extends AbstractType
             KeyValueListType::class,
             [
                 'required' => false,
-                'label' => 'mautic.bpmessage.form.lot_data',
-                'attr' => [
+                'label'    => 'mautic.bpmessage.form.lot_data',
+                'attr'     => [
                     'tooltip' => 'mautic.bpmessage.form.lot_data.tooltip',
                 ],
             ]
@@ -53,13 +53,13 @@ class BpMessageEmailActionType extends AbstractType
             'id_service_settings',
             IntegerType::class,
             [
-                'label' => 'mautic.bpmessage.form.id_service_settings',
+                'label'      => 'mautic.bpmessage.form.id_service_settings',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
+                'attr'       => [
+                    'class'   => 'form-control',
                     'tooltip' => 'mautic.bpmessage.form.id_service_settings.tooltip',
                 ],
-                'required' => true,
+                'required'    => true,
                 'constraints' => [
                     new NotBlank(['message' => 'mautic.bpmessage.id_service_settings.notblank']),
                 ],
@@ -71,11 +71,11 @@ class BpMessageEmailActionType extends AbstractType
             'crm_id',
             IntegerType::class,
             [
-                'required' => true,
-                'label' => 'mautic.bpmessage.form.crm_id',
+                'required'   => true,
+                'label'      => 'mautic.bpmessage.form.crm_id',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
+                'attr'       => [
+                    'class'   => 'form-control',
                     'tooltip' => 'mautic.bpmessage.form.crm_id.tooltip',
                 ],
                 'required' => false,
@@ -86,11 +86,11 @@ class BpMessageEmailActionType extends AbstractType
             'book_business_foreign_id',
             TextType::class,
             [
-                'required' => true,
-                'label' => 'mautic.bpmessage.form.book_business_foreign_id',
+                'required'   => true,
+                'label'      => 'mautic.bpmessage.form.book_business_foreign_id',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
+                'attr'       => [
+                    'class'   => 'form-control',
                     'tooltip' => 'mautic.bpmessage.form.book_business_foreign_id.tooltip',
                 ],
                 'required' => false,
@@ -101,10 +101,10 @@ class BpMessageEmailActionType extends AbstractType
             'step_foreign_id',
             TextType::class,
             [
-                'label' => 'mautic.bpmessage.form.step_foreign_id',
+                'label'      => 'mautic.bpmessage.form.step_foreign_id',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
+                'attr'       => [
+                    'class'   => 'form-control',
                     'tooltip' => 'mautic.bpmessage.form.step_foreign_id.tooltip',
                 ],
                 'required' => false,
@@ -116,14 +116,14 @@ class BpMessageEmailActionType extends AbstractType
             'email_from',
             TextType::class,
             [
-                'label' => 'mautic.bpmessage.form.email_from',
+                'label'      => 'mautic.bpmessage.form.email_from',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.email_from.tooltip',
+                'attr'       => [
+                    'class'       => 'form-control',
+                    'tooltip'     => 'mautic.bpmessage.form.email_from.tooltip',
                     'placeholder' => 'noreply@example.com',
                 ],
-                'required' => true,
+                'required'    => true,
                 'constraints' => [
                     new NotBlank(['message' => 'mautic.bpmessage.email_from.notblank']),
                     new Email(['message' => 'mautic.bpmessage.email_from.invalid']),
@@ -136,11 +136,11 @@ class BpMessageEmailActionType extends AbstractType
             'email_to',
             TextType::class,
             [
-                'label' => 'mautic.bpmessage.form.email_to',
+                'label'      => 'mautic.bpmessage.form.email_to',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.email_to.tooltip',
+                'attr'       => [
+                    'class'       => 'form-control',
+                    'tooltip'     => 'mautic.bpmessage.form.email_to.tooltip',
                     'placeholder' => '{contactfield=email}',
                 ],
                 'required' => false,
@@ -152,11 +152,11 @@ class BpMessageEmailActionType extends AbstractType
             'email_cc',
             TextType::class,
             [
-                'label' => 'mautic.bpmessage.form.email_cc',
+                'label'      => 'mautic.bpmessage.form.email_cc',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.email_cc.tooltip',
+                'attr'       => [
+                    'class'       => 'form-control',
+                    'tooltip'     => 'mautic.bpmessage.form.email_cc.tooltip',
                     'placeholder' => 'cc@example.com',
                 ],
                 'required' => false,
@@ -168,14 +168,14 @@ class BpMessageEmailActionType extends AbstractType
             'email_subject',
             TextType::class,
             [
-                'label' => 'mautic.bpmessage.form.email_subject',
+                'label'      => 'mautic.bpmessage.form.email_subject',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.email_subject.tooltip',
+                'attr'       => [
+                    'class'       => 'form-control',
+                    'tooltip'     => 'mautic.bpmessage.form.email_subject.tooltip',
                     'placeholder' => 'Hello {contactfield=firstname}!',
                 ],
-                'required' => true,
+                'required'    => true,
                 'constraints' => [
                     new NotBlank(['message' => 'mautic.bpmessage.email_subject.notblank']),
                 ],
@@ -187,12 +187,12 @@ class BpMessageEmailActionType extends AbstractType
             'email_body',
             TextareaType::class,
             [
-                'label' => 'mautic.bpmessage.form.email_body',
+                'label'      => 'mautic.bpmessage.form.email_body',
                 'label_attr' => ['class' => 'control-label'],
-                'attr' => [
-                    'class' => 'form-control',
-                    'rows' => 15,
-                    'tooltip' => 'mautic.bpmessage.form.email_body.tooltip',
+                'attr'       => [
+                    'class'       => 'form-control',
+                    'rows'        => 15,
+                    'tooltip'     => 'mautic.bpmessage.form.email_body.tooltip',
                     'placeholder' => "<html>\n<body>\n  <h1>Hello {contactfield=firstname}!</h1>\n  <p>Your message here...</p>\n</body>\n</html>",
                 ],
                 'required' => false,
@@ -205,8 +205,8 @@ class BpMessageEmailActionType extends AbstractType
             KeyValueListType::class,
             [
                 'required' => false,
-                'label' => 'mautic.bpmessage.form.additional_data',
-                'attr' => [
+                'label'    => 'mautic.bpmessage.form.additional_data',
+                'attr'     => [
                     'tooltip' => 'mautic.bpmessage.form.additional_data_email.tooltip',
                 ],
             ]
@@ -218,8 +218,8 @@ class BpMessageEmailActionType extends AbstractType
             KeyValueListType::class,
             [
                 'required' => false,
-                'label' => 'mautic.bpmessage.form.email_variables',
-                'attr' => [
+                'label'    => 'mautic.bpmessage.form.email_variables',
+                'attr'     => [
                     'tooltip' => 'mautic.bpmessage.form.email_variables.tooltip',
                 ],
             ]
@@ -230,13 +230,13 @@ class BpMessageEmailActionType extends AbstractType
             'control',
             ChoiceType::class,
             [
-                'label' => 'mautic.bpmessage.form.control',
+                'label'   => 'mautic.bpmessage.form.control',
                 'choices' => [
                     'mautic.core.yes' => true,
-                    'mautic.core.no' => false,
+                    'mautic.core.no'  => false,
                 ],
-                'attr' => ['class' => 'form-control'],
-                'data' => true,
+                'attr'     => ['class' => 'form-control'],
+                'data'     => true,
                 'required' => false,
             ]
         );
@@ -245,13 +245,13 @@ class BpMessageEmailActionType extends AbstractType
             'is_radar_lot',
             ChoiceType::class,
             [
-                'label' => 'mautic.bpmessage.form.is_radar_lot',
+                'label'   => 'mautic.bpmessage.form.is_radar_lot',
                 'choices' => [
                     'mautic.core.yes' => true,
-                    'mautic.core.no' => false,
+                    'mautic.core.no'  => false,
                 ],
-                'attr' => ['class' => 'form-control'],
-                'data' => false,
+                'attr'     => ['class' => 'form-control'],
+                'data'     => false,
                 'required' => false,
             ]
         );

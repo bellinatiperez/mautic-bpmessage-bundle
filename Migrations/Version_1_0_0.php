@@ -8,7 +8,7 @@ use Doctrine\DBAL\Schema\Schema;
 use MauticPlugin\MauticBpMessageBundle\Migration\AbstractMigration;
 
 /**
- * Initial migration - Create bpmessage_lot and bpmessage_queue tables
+ * Initial migration - Create bpmessage_lot and bpmessage_queue tables.
  */
 class Version_1_0_0 extends AbstractMigration
 {
@@ -24,7 +24,7 @@ class Version_1_0_0 extends AbstractMigration
 
     protected function up(): void
     {
-        $lotTable = $this->concatPrefix('bpmessage_lot');
+        $lotTable   = $this->concatPrefix('bpmessage_lot');
         $queueTable = $this->concatPrefix('bpmessage_queue');
 
         // Create bpmessage_lot table

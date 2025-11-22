@@ -14,7 +14,7 @@ use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use Psr\Log\LoggerInterface;
 
 /**
- * Service to manage BpMessage email lots (creation, queuing, sending, finishing)
+ * Service to manage BpMessage email lots (creation, queuing, sending, finishing).
  */
 class EmailLotManager
 {
@@ -25,19 +25,18 @@ class EmailLotManager
     public function __construct(
         EntityManager $entityManager,
         BpMessageClient $client,
-        LoggerInterface $logger
+        LoggerInterface $logger,
     ) {
         $this->entityManager = $entityManager;
-        $this->client = $client;
-        $this->logger = $logger;
+        $this->client        = $client;
+        $this->logger        = $logger;
     }
 
     /**
-     * Get or create an active email lot for a campaign
+     * Get or create an active email lot for a campaign.
      *
-     * @param Campaign $campaign
      * @param array $config Action configuration
-     * @return BpMessageLot
+     *
      * @throws LotCreationException if lot creation fails
      */
     public function getOrCreateActiveLot(Campaign $campaign, array $config): BpMessageLot
@@ -61,9 +60,9 @@ class EmailLotManager
 
         if (null !== $lot && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
             $this->logger->info('BpMessage Email: Using existing OPEN lot', [
-                'lot_id' => $lot->getId(),
+                'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
-                'campaign_id' => $campaign->getId(),
+                'campaign_id'     => $campaign->getId(),
             ]);
 
             return $lot;
@@ -73,7 +72,7 @@ class EmailLotManager
         // This happens when multiple leads are processed in quick succession
         // Must match same configuration: idServiceSettings (idQuotaSettings is always 0 for emails)
         $recentThreshold = new \DateTime('-60 seconds');
-        $qbCreating = $this->entityManager->createQueryBuilder();
+        $qbCreating      = $this->entityManager->createQueryBuilder();
         $qbCreating->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.campaignId = :campaignId')
@@ -92,9 +91,9 @@ class EmailLotManager
 
         if (null !== $creatingLot) {
             $this->logger->info('BpMessage Email: Reusing recent CREATING lot to prevent duplicates', [
-                'lot_id' => $creatingLot->getId(),
+                'lot_id'      => $creatingLot->getId(),
                 'campaign_id' => $campaign->getId(),
-                'created_at' => $creatingLot->getCreatedAt()->format('Y-m-d H:i:s'),
+                'created_at'  => $creatingLot->getCreatedAt()->format('Y-m-d H:i:s'),
             ]);
 
             return $creatingLot;
@@ -102,7 +101,7 @@ class EmailLotManager
 
         // Create new email lot
         $this->logger->info('BpMessage Email: Creating new lot', [
-            'campaign_id' => $campaign->getId(),
+            'campaign_id'   => $campaign->getId(),
             'campaign_name' => $campaign->getName(),
         ]);
 
@@ -110,11 +109,8 @@ class EmailLotManager
     }
 
     /**
-     * Create a new email lot
+     * Create a new email lot.
      *
-     * @param Campaign $campaign
-     * @param array $config
-     * @return BpMessageLot
      * @throws LotCreationException if lot creation fails
      */
     private function createLot(Campaign $campaign, array $config): BpMessageLot
@@ -125,11 +121,11 @@ class EmailLotManager
 
         // Calculate startDate and endDate
         $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300); // seconds
-        $now = new \DateTime('now');
+        $now        = new \DateTime('now');
 
         // Check if lot_data has custom startDate/endDate
         $startDate = $now;
-        $endDate = (clone $now)->modify("+{$timeWindow} seconds");
+        $endDate   = (clone $now)->modify("+{$timeWindow} seconds");
 
         if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
             // Check for startDate in lot_data
@@ -139,7 +135,7 @@ class EmailLotManager
                 } catch (\Exception $e) {
                     $this->logger->warning('BpMessage Email: Invalid startDate format, using current time', [
                         'startDate' => $config['lot_data']['startDate'],
-                        'error' => $e->getMessage(),
+                        'error'     => $e->getMessage(),
                     ]);
                 }
             }
@@ -151,7 +147,7 @@ class EmailLotManager
                 } catch (\Exception $e) {
                     $this->logger->warning('BpMessage Email: Invalid endDate format, calculating from startDate + timeWindow', [
                         'endDate' => $config['lot_data']['endDate'],
-                        'error' => $e->getMessage(),
+                        'error'   => $e->getMessage(),
                     ]);
                     $endDate = (clone $startDate)->modify("+{$timeWindow} seconds");
                 }
@@ -189,10 +185,10 @@ class EmailLotManager
         $endDateUTC->setTimezone(new \DateTimeZone('UTC'));
 
         $lotData = [
-            'name' => $lot->getName(),
-            'startDate' => $startDateUTC->format('Y-m-d\TH:i:s.v\Z'),
-            'endDate' => $endDateUTC->format('Y-m-d\TH:i:s.v\Z'),
-            'user' => 'system',
+            'name'              => $lot->getName(),
+            'startDate'         => $startDateUTC->format('Y-m-d\TH:i:s.v\Z'),
+            'endDate'           => $endDateUTC->format('Y-m-d\TH:i:s.v\Z'),
+            'user'              => 'system',
             'idServiceSettings' => $lot->getIdServiceSettings(),
         ];
 
@@ -249,9 +245,9 @@ class EmailLotManager
             $this->entityManager->refresh($lot);
 
             $this->logger->info('BpMessage Email: Lot created successfully', [
-                'lot_id' => $lot->getId(),
+                'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
-                'status' => $lot->getStatus(),
+                'status'          => $lot->getStatus(),
             ]);
 
             return $lot;
@@ -261,26 +257,21 @@ class EmailLotManager
         } catch (\Exception $e) {
             // If any other exception occurs during API call, mark lot as FAILED
             $lot->setStatus('FAILED');
-            $lot->setErrorMessage('API call exception: ' . $e->getMessage());
+            $lot->setErrorMessage('API call exception: '.$e->getMessage());
             $this->entityManager->flush();
 
             $this->logger->error('BpMessage Email: Exception during lot creation', [
                 'lot_id' => $lot->getId(),
-                'error' => $e->getMessage(),
+                'error'  => $e->getMessage(),
             ]);
 
             // Wrap in LotCreationException to signal this is a lot-level error, not a lead error
-            throw new LotCreationException('API call exception: ' . $e->getMessage(), $lot->getId(), 0, $e);
+            throw new LotCreationException('API call exception: '.$e->getMessage(), $lot->getId(), 0, $e);
         }
     }
 
     /**
-     * Queue an email for a lot
-     *
-     * @param BpMessageLot $lot
-     * @param Lead $lead
-     * @param array $emailData
-     * @return BpMessageQueue
+     * Queue an email for a lot.
      */
     public function queueEmail(BpMessageLot $lot, Lead $lead, array $emailData): BpMessageQueue
     {
@@ -297,7 +288,7 @@ class EmailLotManager
 
         if ($count > 0) {
             $this->logger->warning('BpMessage Email: Lead already queued', [
-                'lot_id' => $lot->getId(),
+                'lot_id'  => $lot->getId(),
                 'lead_id' => $lead->getId(),
             ]);
 
@@ -328,9 +319,9 @@ class EmailLotManager
         $this->entityManager->refresh($lot);
 
         $this->logger->info('BpMessage Email: Email queued', [
-            'lot_id' => $lot->getId(),
-            'lead_id' => $lead->getId(),
-            'queue_id' => $queue->getId(),
+            'lot_id'         => $lot->getId(),
+            'lead_id'        => $lead->getId(),
+            'queue_id'       => $queue->getId(),
             'messages_count' => $lot->getMessagesCount(),
         ]);
 
@@ -338,10 +329,7 @@ class EmailLotManager
     }
 
     /**
-     * Send all pending emails for a lot
-     *
-     * @param BpMessageLot $lot
-     * @return bool
+     * Send all pending emails for a lot.
      */
     public function sendLotEmails(BpMessageLot $lot): bool
     {
@@ -358,7 +346,7 @@ class EmailLotManager
         $this->entityManager->flush();
 
         $this->logger->info('BpMessage Email: Starting to send lot emails', [
-            'lot_id' => $lot->getId(),
+            'lot_id'          => $lot->getId(),
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
@@ -384,7 +372,7 @@ class EmailLotManager
 
         $this->logger->info('BpMessage Email: Found pending emails', [
             'lot_id' => $lot->getId(),
-            'count' => count($pendingEmails),
+            'count'  => count($pendingEmails),
         ]);
 
         // Send in batches of 5000 (BpMessage limit)
@@ -393,9 +381,9 @@ class EmailLotManager
 
         foreach ($batches as $batchIndex => $batch) {
             $this->logger->info('BpMessage Email: Sending batch', [
-                'lot_id' => $lot->getId(),
+                'lot_id'      => $lot->getId(),
                 'batch_index' => $batchIndex,
-                'batch_size' => count($batch),
+                'batch_size'  => count($batch),
             ]);
 
             $emails = array_map(function (BpMessageQueue $queue) {
@@ -423,7 +411,7 @@ class EmailLotManager
                     ->execute();
 
                 $this->logger->info('BpMessage Email: Batch sent successfully', [
-                    'lot_id' => $lot->getId(),
+                    'lot_id'      => $lot->getId(),
                     'batch_index' => $batchIndex,
                 ]);
             } else {
@@ -437,9 +425,9 @@ class EmailLotManager
                 $this->entityManager->flush();
 
                 $this->logger->error('BpMessage Email: Batch failed', [
-                    'lot_id' => $lot->getId(),
+                    'lot_id'      => $lot->getId(),
                     'batch_index' => $batchIndex,
-                    'error' => $result['error'],
+                    'error'       => $result['error'],
                 ]);
 
                 break; // Stop processing on first failure
@@ -450,15 +438,12 @@ class EmailLotManager
     }
 
     /**
-     * Finish an email lot (close it in BpMessage)
-     *
-     * @param BpMessageLot $lot
-     * @return bool
+     * Finish an email lot (close it in BpMessage).
      */
     public function finishLot(BpMessageLot $lot): bool
     {
         $this->logger->info('BpMessage Email: Finishing lot', [
-            'lot_id' => $lot->getId(),
+            'lot_id'          => $lot->getId(),
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
@@ -494,7 +479,7 @@ class EmailLotManager
         // The lot MUST be closed because BpMessage won't accept more emails
         $this->logger->warning('BpMessage Email: Failed to finish lot via API, but emails were sent. Marking as FINISHED locally.', [
             'lot_id' => $lot->getId(),
-            'error' => $result['error'],
+            'error'  => $result['error'],
         ]);
 
         $lot->setStatus('FINISHED');
@@ -522,10 +507,7 @@ class EmailLotManager
     }
 
     /**
-     * Process an email lot (send emails and finish)
-     *
-     * @param BpMessageLot $lot
-     * @return bool
+     * Process an email lot (send emails and finish).
      */
     public function processLot(BpMessageLot $lot): bool
     {

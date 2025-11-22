@@ -12,14 +12,14 @@ use MauticPlugin\MauticBpMessageBundle\Exception\LotCreationException;
 use MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageActionType;
 use MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageEmailActionType;
 use MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageEmailTemplateActionType;
-use MauticPlugin\MauticBpMessageBundle\Model\BpMessageModel;
 use MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailModel;
 use MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailTemplateModel;
+use MauticPlugin\MauticBpMessageBundle\Model\BpMessageModel;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Campaign event subscriber for BpMessage integration
+ * Campaign event subscriber for BpMessage integration.
  */
 class CampaignSubscriber implements EventSubscriberInterface
 {
@@ -34,27 +34,27 @@ class CampaignSubscriber implements EventSubscriberInterface
         BpMessageEmailModel $bpMessageEmailModel,
         BpMessageEmailTemplateModel $bpMessageEmailTemplateModel,
         LoggerInterface $logger,
-        Connection $connection
+        Connection $connection,
     ) {
-        $this->bpMessageModel = $bpMessageModel;
-        $this->bpMessageEmailModel = $bpMessageEmailModel;
+        $this->bpMessageModel              = $bpMessageModel;
+        $this->bpMessageEmailModel         = $bpMessageEmailModel;
         $this->bpMessageEmailTemplateModel = $bpMessageEmailTemplateModel;
-        $this->logger = $logger;
-        $this->connection = $connection;
+        $this->logger                      = $logger;
+        $this->connection                  = $connection;
     }
 
     public static function getSubscribedEvents(): array
     {
         return [
-            CampaignEvents::CAMPAIGN_ON_BUILD => ['onCampaignBuild', 0],
-            'mautic.bpmessage.on_campaign_trigger_action' => ['onCampaignTriggerAction', 0],
-            'mautic.bpmessage.email.on_campaign_trigger_action' => ['onCampaignTriggerEmailAction', 0],
+            CampaignEvents::CAMPAIGN_ON_BUILD                            => ['onCampaignBuild', 0],
+            'mautic.bpmessage.on_campaign_trigger_action'                => ['onCampaignTriggerAction', 0],
+            'mautic.bpmessage.email.on_campaign_trigger_action'          => ['onCampaignTriggerEmailAction', 0],
             'mautic.bpmessage.email_template.on_campaign_trigger_action' => ['onCampaignTriggerEmailTemplateAction', 0],
         ];
     }
 
     /**
-     * Register BpMessage actions in campaign builder
+     * Register BpMessage actions in campaign builder.
      */
     public function onCampaignBuild(CampaignBuilderEvent $event): void
     {
@@ -62,16 +62,16 @@ class CampaignSubscriber implements EventSubscriberInterface
         $event->addAction(
             'bpmessage.send',
             [
-                'label' => 'mautic.bpmessage.campaign.action.send',
-                'description' => 'mautic.bpmessage.campaign.action.send.descr',
-                'batchEventName' => 'mautic.bpmessage.on_campaign_trigger_action',
-                'formType' => BpMessageActionType::class,
+                'label'              => 'mautic.bpmessage.campaign.action.send',
+                'description'        => 'mautic.bpmessage.campaign.action.send.descr',
+                'batchEventName'     => 'mautic.bpmessage.on_campaign_trigger_action',
+                'formType'           => BpMessageActionType::class,
                 'formTypeCleanMasks' => [
-                    'lot_data' => 'raw',
-                    'additional_data' => 'raw',
+                    'lot_data'          => 'raw',
+                    'additional_data'   => 'raw',
                     'message_variables' => 'raw',
                 ],
-                'channel' => 'bpmessage',
+                'channel'        => 'bpmessage',
                 'channelIdField' => 'bpmessage_id',
             ]
         );
@@ -80,17 +80,17 @@ class CampaignSubscriber implements EventSubscriberInterface
         $event->addAction(
             'bpmessage.send_email',
             [
-                'label' => 'mautic.bpmessage.campaign.action.send_email',
-                'description' => 'mautic.bpmessage.campaign.action.send_email.descr',
-                'batchEventName' => 'mautic.bpmessage.email.on_campaign_trigger_action',
-                'formType' => BpMessageEmailActionType::class,
+                'label'              => 'mautic.bpmessage.campaign.action.send_email',
+                'description'        => 'mautic.bpmessage.campaign.action.send_email.descr',
+                'batchEventName'     => 'mautic.bpmessage.email.on_campaign_trigger_action',
+                'formType'           => BpMessageEmailActionType::class,
                 'formTypeCleanMasks' => [
-                    'lot_data' => 'raw',
+                    'lot_data'        => 'raw',
                     'additional_data' => 'raw',
                     'email_variables' => 'raw',
-                    'email_body' => 'raw',  // Preserve HTML in email body
+                    'email_body'      => 'raw',  // Preserve HTML in email body
                 ],
-                'channel' => 'bpmessage_email',
+                'channel'        => 'bpmessage_email',
                 'channelIdField' => 'bpmessage_email_id',
             ]
         );
@@ -99,40 +99,41 @@ class CampaignSubscriber implements EventSubscriberInterface
         $event->addAction(
             'bpmessage.send_email_template',
             [
-                'label' => 'mautic.bpmessage.campaign.action.send_email_template',
-                'description' => 'mautic.bpmessage.campaign.action.send_email_template.descr',
-                'batchEventName' => 'mautic.bpmessage.email_template.on_campaign_trigger_action',
-                'formType' => BpMessageEmailTemplateActionType::class,
+                'label'              => 'mautic.bpmessage.campaign.action.send_email_template',
+                'description'        => 'mautic.bpmessage.campaign.action.send_email_template.descr',
+                'batchEventName'     => 'mautic.bpmessage.email_template.on_campaign_trigger_action',
+                'formType'           => BpMessageEmailTemplateActionType::class,
                 'formTypeCleanMasks' => [
-                    'lot_data' => 'raw',
+                    'lot_data'        => 'raw',
                     'additional_data' => 'raw',
                     'email_variables' => 'raw',
-                    'email_body' => 'raw',  // Preserve HTML in email body (if template has custom body)
+                    'email_body'      => 'raw',  // Preserve HTML in email body (if template has custom body)
                 ],
-                'channel' => 'bpmessage_email_template',
+                'channel'        => 'bpmessage_email_template',
                 'channelIdField' => 'bpmessage_email_template_id',
             ]
         );
     }
 
     /**
-     * Execute BpMessage action when triggered in campaign (batch processing)
+     * Execute BpMessage action when triggered in campaign (batch processing).
      */
     public function onCampaignTriggerAction(PendingEvent $event): void
     {
         $this->logger->info('BpMessage: onCampaignTriggerAction CALLED');
 
-        $config = $event->getEvent()->getProperties();
+        $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
 
         $this->logger->info('BpMessage: Campaign', [
-            'campaign_id' => $campaign ? $campaign->getId() : 'NULL',
+            'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',
             'campaign_name' => $campaign ? $campaign->getName() : 'NULL',
         ]);
 
         if (!$campaign) {
             $this->logger->error('BpMessage: Campaign not found in event');
             $event->failAll('Campaign not found');
+
             return;
         }
 
@@ -148,7 +149,7 @@ class CampaignSubscriber implements EventSubscriberInterface
 
             $this->logger->info('BpMessage: Processing lead', [
                 'lead_id' => $lead->getId(),
-                'log_id' => $log->getId(),
+                'log_id'  => $log->getId(),
             ]);
 
             try {
@@ -168,11 +169,11 @@ class CampaignSubscriber implements EventSubscriberInterface
                 // Lot creation failed - this is a configuration/API error, NOT a lead error
                 // Do NOT mark leads as failed - leave them pending for retry
                 $this->logger->error('BpMessage: LOT CREATION FAILED - Leads remain pending for retry', [
-                    'campaign_id' => $campaign->getId(),
-                    'lot_id' => $e->getLotId(),
-                    'error' => $e->getMessage(),
+                    'campaign_id'     => $campaign->getId(),
+                    'lot_id'          => $e->getLotId(),
+                    'error'           => $e->getMessage(),
                     'is_config_error' => $e->isConfigurationError(),
-                    'affected_leads' => is_countable($logs) ? count($logs) : 'unknown',
+                    'affected_leads'  => is_countable($logs) ? count($logs) : 'unknown',
                 ]);
 
                 // Stop processing remaining leads - they will all fail with the same lot error
@@ -183,30 +184,31 @@ class CampaignSubscriber implements EventSubscriberInterface
                 $event->fail($log, $e->getMessage());
                 $this->logger->error('BpMessage: Lead-specific exception occurred', [
                     'lead_id' => $lead->getId(),
-                    'error' => $e->getMessage(),
+                    'error'   => $e->getMessage(),
                 ]);
             }
         }
     }
 
     /**
-     * Execute BpMessage Email action when triggered in campaign (batch processing)
+     * Execute BpMessage Email action when triggered in campaign (batch processing).
      */
     public function onCampaignTriggerEmailAction(PendingEvent $event): void
     {
         $this->logger->info('BpMessage Email: onCampaignTriggerEmailAction CALLED');
 
-        $config = $event->getEvent()->getProperties();
+        $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
 
         $this->logger->info('BpMessage Email: Campaign', [
-            'campaign_id' => $campaign ? $campaign->getId() : 'NULL',
+            'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',
             'campaign_name' => $campaign ? $campaign->getName() : 'NULL',
         ]);
 
         if (!$campaign) {
             $this->logger->error('BpMessage Email: Campaign not found in event');
             $event->failAll('Campaign not found');
+
             return;
         }
 
@@ -222,7 +224,7 @@ class CampaignSubscriber implements EventSubscriberInterface
 
             $this->logger->info('BpMessage Email: Processing lead', [
                 'lead_id' => $lead->getId(),
-                'log_id' => $log->getId(),
+                'log_id'  => $log->getId(),
             ]);
 
             try {
@@ -242,11 +244,11 @@ class CampaignSubscriber implements EventSubscriberInterface
                 // Lot creation failed - this is a configuration/API error, NOT a lead error
                 // Do NOT mark leads as failed - leave them pending for retry
                 $this->logger->error('BpMessage Email: LOT CREATION FAILED - Leads remain pending for retry', [
-                    'campaign_id' => $campaign->getId(),
-                    'lot_id' => $e->getLotId(),
-                    'error' => $e->getMessage(),
+                    'campaign_id'     => $campaign->getId(),
+                    'lot_id'          => $e->getLotId(),
+                    'error'           => $e->getMessage(),
                     'is_config_error' => $e->isConfigurationError(),
-                    'affected_leads' => is_countable($logs) ? count($logs) : 'unknown',
+                    'affected_leads'  => is_countable($logs) ? count($logs) : 'unknown',
                 ]);
 
                 // Stop processing remaining leads - they will all fail with the same lot error
@@ -257,30 +259,31 @@ class CampaignSubscriber implements EventSubscriberInterface
                 $event->fail($log, $e->getMessage());
                 $this->logger->error('BpMessage Email: Lead-specific exception occurred', [
                     'lead_id' => $lead->getId(),
-                    'error' => $e->getMessage(),
+                    'error'   => $e->getMessage(),
                 ]);
             }
         }
     }
 
     /**
-     * Execute BpMessage Email Template action when triggered in campaign (batch processing)
+     * Execute BpMessage Email Template action when triggered in campaign (batch processing).
      */
     public function onCampaignTriggerEmailTemplateAction(PendingEvent $event): void
     {
         $this->logger->info('BpMessage Email Template: onCampaignTriggerEmailTemplateAction CALLED');
 
-        $config = $event->getEvent()->getProperties();
+        $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
 
         $this->logger->info('BpMessage Email Template: Campaign', [
-            'campaign_id' => $campaign ? $campaign->getId() : 'NULL',
+            'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',
             'campaign_name' => $campaign ? $campaign->getName() : 'NULL',
         ]);
 
         if (!$campaign) {
             $this->logger->error('BpMessage Email Template: Campaign not found in event');
             $event->failAll('Campaign not found');
+
             return;
         }
 
@@ -291,8 +294,8 @@ class CampaignSubscriber implements EventSubscriberInterface
             'count' => is_countable($logs) ? count($logs) : 'unknown',
         ]);
 
-        $lotFailed = false;
-        $lotError = null;
+        $lotFailed    = false;
+        $lotError     = null;
         $failedLogIds = [];
 
         foreach ($logs as $log) {
@@ -308,7 +311,7 @@ class CampaignSubscriber implements EventSubscriberInterface
 
             $this->logger->info('BpMessage Email Template: Processing lead', [
                 'lead_id' => $lead->getId(),
-                'log_id' => $log->getId(),
+                'log_id'  => $log->getId(),
             ]);
 
             try {
@@ -332,14 +335,14 @@ class CampaignSubscriber implements EventSubscriberInterface
 
                 // Set flag to skip remaining leads
                 $lotFailed = true;
-                $lotError = $e;
+                $lotError  = $e;
 
                 $this->logger->error('BpMessage Email Template: LOT CREATION FAILED - Leads will be available for retry', [
-                    'campaign_id' => $campaign->getId(),
-                    'lot_id' => $e->getLotId(),
-                    'error' => $e->getMessage(),
+                    'campaign_id'     => $campaign->getId(),
+                    'lot_id'          => $e->getLotId(),
+                    'error'           => $e->getMessage(),
                     'is_config_error' => $e->isConfigurationError(),
-                    'affected_leads' => is_countable($logs) ? count($logs) : 'unknown',
+                    'affected_leads'  => is_countable($logs) ? count($logs) : 'unknown',
                 ]);
 
                 // Continue to mark remaining logs as failed (temporarily)
@@ -349,7 +352,7 @@ class CampaignSubscriber implements EventSubscriberInterface
                 $event->fail($log, $e->getMessage());
                 $this->logger->error('BpMessage Email Template: Lead-specific exception occurred', [
                     'lead_id' => $lead->getId(),
-                    'error' => $e->getMessage(),
+                    'error'   => $e->getMessage(),
                 ]);
             }
         }
@@ -364,7 +367,7 @@ class CampaignSubscriber implements EventSubscriberInterface
             );
 
             $this->logger->info('BpMessage Email Template: Reset logs for retry', [
-                'count' => count($failedLogIds),
+                'count'   => count($failedLogIds),
                 'log_ids' => $failedLogIds,
             ]);
         }

@@ -8,14 +8,14 @@ use Symfony\Component\Form\DataTransformerInterface;
 
 /**
  * Custom transformer that preserves label as key and value as value
- * Unlike core SortableListTransformer, this allows duplicate values
+ * Unlike core SortableListTransformer, this allows duplicate values.
  */
 class KeyValueListTransformer implements DataTransformerInterface
 {
     /**
      * Transform from stored format to form format
      * Converts: ['key1' => 'value1', 'key2' => 'value2']
-     * To: ['list' => [['label' => 'key1', 'value' => 'value1'], ...]]
+     * To: ['list' => [['label' => 'key1', 'value' => 'value1'], ...]].
      */
     public function transform(mixed $array): mixed
     {
@@ -37,7 +37,7 @@ class KeyValueListTransformer implements DataTransformerInterface
     /**
      * Transform from form format to stored format
      * Converts: ['list' => [['label' => 'key1', 'value' => 'value1'], ...]]
-     * To: ['key1' => 'value1', 'key2' => 'value2']
+     * To: ['key1' => 'value1', 'key2' => 'value2'].
      */
     public function reverseTransform(mixed $array): mixed
     {

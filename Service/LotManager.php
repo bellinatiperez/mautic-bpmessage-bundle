@@ -8,14 +8,12 @@ use Doctrine\ORM\EntityManager;
 use Mautic\CampaignBundle\Entity\Campaign;
 use Mautic\LeadBundle\Entity\Lead;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
-use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLotRepository;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
-use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueueRepository;
 use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use Psr\Log\LoggerInterface;
 
 /**
- * Service to manage BpMessage lots (creation, queuing, sending, finishing)
+ * Service to manage BpMessage lots (creation, queuing, sending, finishing).
  */
 class LotManager
 {
@@ -26,19 +24,18 @@ class LotManager
     public function __construct(
         EntityManager $entityManager,
         BpMessageClient $client,
-        LoggerInterface $logger
+        LoggerInterface $logger,
     ) {
         $this->entityManager = $entityManager;
-        $this->client = $client;
-        $this->logger = $logger;
+        $this->client        = $client;
+        $this->logger        = $logger;
     }
 
     /**
-     * Get or create an active lot for a campaign
+     * Get or create an active lot for a campaign.
      *
-     * @param Campaign $campaign
      * @param array $config Action configuration
-     * @return BpMessageLot
+     *
      * @throws \RuntimeException if lot creation fails
      */
     public function getOrCreateActiveLot(Campaign $campaign, array $config): BpMessageLot
@@ -65,9 +62,9 @@ class LotManager
 
         if (null !== $lot && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
             $this->logger->info('BpMessage: Using existing OPEN lot', [
-                'lot_id' => $lot->getId(),
+                'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
-                'campaign_id' => $campaign->getId(),
+                'campaign_id'     => $campaign->getId(),
             ]);
 
             return $lot;
@@ -77,7 +74,7 @@ class LotManager
         // These lots failed during API call but can accept contacts for later retry
         // Reuse recent FAILED_CREATION lots (within last 24 hours) to avoid creating multiple failed lots
         $failedThreshold = new \DateTime('-24 hours');
-        $qbFailed = $this->entityManager->createQueryBuilder();
+        $qbFailed        = $this->entityManager->createQueryBuilder();
         $qbFailed->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.campaignId = :campaignId')
@@ -101,10 +98,10 @@ class LotManager
 
         if (null !== $failedLot) {
             $this->logger->info('BpMessage: Reusing FAILED_CREATION lot - contacts will be queued for retry', [
-                'lot_id' => $failedLot->getId(),
-                'campaign_id' => $campaign->getId(),
+                'lot_id'         => $failedLot->getId(),
+                'campaign_id'    => $campaign->getId(),
                 'messages_count' => $failedLot->getMessagesCount(),
-                'error' => $failedLot->getErrorMessage(),
+                'error'          => $failedLot->getErrorMessage(),
             ]);
 
             return $failedLot;
@@ -114,7 +111,7 @@ class LotManager
         // This happens when multiple leads are processed in quick succession
         // Must match same configuration: idQuotaSettings + idServiceSettings + serviceType
         $recentThreshold = new \DateTime('-60 seconds');
-        $qbCreating = $this->entityManager->createQueryBuilder();
+        $qbCreating      = $this->entityManager->createQueryBuilder();
         $qbCreating->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.campaignId = :campaignId')
@@ -136,9 +133,9 @@ class LotManager
 
         if (null !== $creatingLot) {
             $this->logger->info('BpMessage: Reusing recent CREATING lot to prevent duplicates', [
-                'lot_id' => $creatingLot->getId(),
+                'lot_id'      => $creatingLot->getId(),
                 'campaign_id' => $campaign->getId(),
-                'created_at' => $creatingLot->getCreatedAt()->format('Y-m-d H:i:s'),
+                'created_at'  => $creatingLot->getCreatedAt()->format('Y-m-d H:i:s'),
             ]);
 
             return $creatingLot;
@@ -146,7 +143,7 @@ class LotManager
 
         // Create new lot
         $this->logger->info('BpMessage: Creating new lot', [
-            'campaign_id' => $campaign->getId(),
+            'campaign_id'   => $campaign->getId(),
             'campaign_name' => $campaign->getName(),
         ]);
 
@@ -154,11 +151,8 @@ class LotManager
     }
 
     /**
-     * Create a new lot
+     * Create a new lot.
      *
-     * @param Campaign $campaign
-     * @param array $config
-     * @return BpMessageLot
      * @throws \RuntimeException if lot creation fails
      */
     private function createLot(Campaign $campaign, array $config): BpMessageLot
@@ -169,11 +163,11 @@ class LotManager
 
         // Calculate startDate and endDate
         $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300); // seconds
-        $now = new \DateTime('now');
+        $now        = new \DateTime('now');
 
         // Check if lot_data has custom startDate/endDate
         $startDate = $now;
-        $endDate = (clone $now)->modify("+{$timeWindow} seconds");
+        $endDate   = (clone $now)->modify("+{$timeWindow} seconds");
 
         if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
             // Check for startDate in lot_data
@@ -183,7 +177,7 @@ class LotManager
                 } catch (\Exception $e) {
                     $this->logger->warning('BpMessage: Invalid startDate format, using current time', [
                         'startDate' => $config['lot_data']['startDate'],
-                        'error' => $e->getMessage(),
+                        'error'     => $e->getMessage(),
                     ]);
                 }
             }
@@ -195,7 +189,7 @@ class LotManager
                 } catch (\Exception $e) {
                     $this->logger->warning('BpMessage: Invalid endDate format, calculating from startDate + timeWindow', [
                         'endDate' => $config['lot_data']['endDate'],
-                        'error' => $e->getMessage(),
+                        'error'   => $e->getMessage(),
                     ]);
                     $endDate = (clone $startDate)->modify("+{$timeWindow} seconds");
                 }
@@ -237,11 +231,11 @@ class LotManager
         $endDateUTC->setTimezone(new \DateTimeZone('UTC'));
 
         $lotData = [
-            'name' => $lot->getName(),
-            'startDate' => $startDateUTC->format('Y-m-d\TH:i:s.v\Z'),
-            'endDate' => $endDateUTC->format('Y-m-d\TH:i:s.v\Z'),
-            'user' => 'system', // Fixed value
-            'idQuotaSettings' => $lot->getIdQuotaSettings(),
+            'name'              => $lot->getName(),
+            'startDate'         => $startDateUTC->format('Y-m-d\TH:i:s.v\Z'),
+            'endDate'           => $endDateUTC->format('Y-m-d\TH:i:s.v\Z'),
+            'user'              => 'system', // Fixed value
+            'idQuotaSettings'   => $lot->getIdQuotaSettings(),
             'idServiceSettings' => $lot->getIdServiceSettings(),
         ];
 
@@ -270,7 +264,7 @@ class LotManager
 
                 $this->logger->warning('BpMessage: Failed to create lot in API, contacts will be queued for retry', [
                     'lot_id' => $lot->getId(),
-                    'error' => $result['error'],
+                    'error'  => $result['error'],
                 ]);
 
                 // Return lot with FAILED_CREATION status
@@ -298,9 +292,9 @@ class LotManager
             $this->entityManager->refresh($lot);
 
             $this->logger->info('BpMessage: Lot created successfully', [
-                'lot_id' => $lot->getId(),
+                'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
-                'status' => $lot->getStatus(),
+                'status'          => $lot->getStatus(),
             ]);
 
             return $lot;
@@ -308,13 +302,13 @@ class LotManager
             // If any exception occurs during API call, mark lot as FAILED_CREATION
             // This allows contacts to be queued for later retry
             $lot->setStatus('FAILED_CREATION');
-            $lot->setErrorMessage('API call exception: ' . $e->getMessage());
+            $lot->setErrorMessage('API call exception: '.$e->getMessage());
             $this->entityManager->persist($lot);
             $this->entityManager->flush();
 
             $this->logger->error('BpMessage: Exception during lot creation, contacts will be queued for retry', [
                 'lot_id' => $lot->getId(),
-                'error' => $e->getMessage(),
+                'error'  => $e->getMessage(),
             ]);
 
             // Return lot with FAILED_CREATION status instead of throwing
@@ -324,12 +318,7 @@ class LotManager
     }
 
     /**
-     * Queue a message for a lot
-     *
-     * @param BpMessageLot $lot
-     * @param Lead $lead
-     * @param array $messageData
-     * @return BpMessageQueue
+     * Queue a message for a lot.
      */
     public function queueMessage(BpMessageLot $lot, Lead $lead, array $messageData): BpMessageQueue
     {
@@ -346,7 +335,7 @@ class LotManager
 
         if ($count > 0) {
             $this->logger->warning('BpMessage: Lead already queued', [
-                'lot_id' => $lot->getId(),
+                'lot_id'  => $lot->getId(),
                 'lead_id' => $lead->getId(),
             ]);
 
@@ -377,9 +366,9 @@ class LotManager
         $this->entityManager->refresh($lot);
 
         $this->logger->info('BpMessage: Message queued', [
-            'lot_id' => $lot->getId(),
-            'lead_id' => $lead->getId(),
-            'queue_id' => $queue->getId(),
+            'lot_id'         => $lot->getId(),
+            'lead_id'        => $lead->getId(),
+            'queue_id'       => $queue->getId(),
             'messages_count' => $lot->getMessagesCount(),
         ]);
 
@@ -387,10 +376,7 @@ class LotManager
     }
 
     /**
-     * Check if a lot should be closed
-     *
-     * @param BpMessageLot $lot
-     * @return bool
+     * Check if a lot should be closed.
      */
     public function shouldCloseLot(BpMessageLot $lot): bool
     {
@@ -398,10 +384,7 @@ class LotManager
     }
 
     /**
-     * Send all pending messages for a lot
-     *
-     * @param BpMessageLot $lot
-     * @return bool
+     * Send all pending messages for a lot.
      */
     public function sendLotMessages(BpMessageLot $lot): bool
     {
@@ -418,7 +401,7 @@ class LotManager
         $this->entityManager->flush();
 
         $this->logger->info('BpMessage: Starting to send lot messages', [
-            'lot_id' => $lot->getId(),
+            'lot_id'          => $lot->getId(),
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
@@ -444,7 +427,7 @@ class LotManager
 
         $this->logger->info('BpMessage: Found pending messages', [
             'lot_id' => $lot->getId(),
-            'count' => count($pendingMessages),
+            'count'  => count($pendingMessages),
         ]);
 
         // Send in batches of 5000 (BpMessage limit)
@@ -453,9 +436,9 @@ class LotManager
 
         foreach ($batches as $batchIndex => $batch) {
             $this->logger->info('BpMessage: Sending batch', [
-                'lot_id' => $lot->getId(),
+                'lot_id'      => $lot->getId(),
                 'batch_index' => $batchIndex,
-                'batch_size' => count($batch),
+                'batch_size'  => count($batch),
             ]);
 
             $messages = array_map(function (BpMessageQueue $queue) {
@@ -483,14 +466,14 @@ class LotManager
                     ->execute();
 
                 $this->logger->info('BpMessage: Batch sent successfully', [
-                    'lot_id' => $lot->getId(),
+                    'lot_id'      => $lot->getId(),
                     'batch_index' => $batchIndex,
                 ]);
             } else {
                 $success = false;
 
                 // Save error message to lot for user visibility
-                $errorMessage = "Batch {$batchIndex} failed: " . $result['error'];
+                $errorMessage = "Batch {$batchIndex} failed: ".$result['error'];
                 $lot->setErrorMessage($errorMessage);
                 $lot->setStatus('FAILED');
 
@@ -502,9 +485,9 @@ class LotManager
                 $this->entityManager->flush();
 
                 $this->logger->error('BpMessage: Batch failed', [
-                    'lot_id' => $lot->getId(),
+                    'lot_id'      => $lot->getId(),
                     'batch_index' => $batchIndex,
-                    'error' => $result['error'],
+                    'error'       => $result['error'],
                 ]);
 
                 break; // Stop processing on first failure
@@ -515,15 +498,12 @@ class LotManager
     }
 
     /**
-     * Finish a lot (close it in BpMessage)
-     *
-     * @param BpMessageLot $lot
-     * @return bool
+     * Finish a lot (close it in BpMessage).
      */
     public function finishLot(BpMessageLot $lot): bool
     {
         $this->logger->info('BpMessage: Finishing lot', [
-            'lot_id' => $lot->getId(),
+            'lot_id'          => $lot->getId(),
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
@@ -559,7 +539,7 @@ class LotManager
         // The lot MUST be closed because BpMessage won't accept more messages
         $this->logger->warning('BpMessage: Failed to finish lot via API, but messages were sent. Marking as FINISHED locally.', [
             'lot_id' => $lot->getId(),
-            'error' => $result['error'],
+            'error'  => $result['error'],
         ]);
 
         $lot->setStatus('FINISHED');
@@ -587,10 +567,7 @@ class LotManager
     }
 
     /**
-     * Process a lot (send messages and finish)
-     *
-     * @param BpMessageLot $lot
-     * @return bool
+     * Process a lot (send messages and finish).
      */
     public function processLot(BpMessageLot $lot): bool
     {
@@ -613,10 +590,8 @@ class LotManager
     }
 
     /**
-     * Retry failed messages
+     * Retry failed messages.
      *
-     * @param int $maxRetries
-     * @param int|null $limit
      * @return int Number of messages retried
      */
     public function retryFailedMessages(int $maxRetries = 3, ?int $limit = null): int
@@ -685,11 +660,10 @@ class LotManager
     }
 
     /**
-     * Parse datetime value from form to DateTime object
+     * Parse datetime value from form to DateTime object.
      *
-     * @param mixed $value Value from form (can be DateTime, string, or null)
+     * @param mixed  $value   Value from form (can be DateTime, string, or null)
      * @param string $default Default value if null
-     * @return \DateTime
      */
     private function parseDateTime($value, string $default = 'now'): \DateTime
     {
@@ -712,6 +686,7 @@ class LotManager
                     'value' => $value,
                     'error' => $e->getMessage(),
                 ]);
+
                 return new \DateTime($default);
             }
         }

@@ -17,7 +17,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Command to retry creating lots that failed during API call
- * This ensures no contacts are lost even when BpMessage API is unavailable
+ * This ensures no contacts are lost even when BpMessage API is unavailable.
  */
 class RetryFailedLotsCommand extends Command
 {
@@ -28,9 +28,9 @@ class RetryFailedLotsCommand extends Command
     public function __construct(
         EntityManager $entityManager,
         BpMessageClient $client,
-        LoggerInterface $logger
+        LoggerInterface $logger,
     ) {
-        $this->em = $entityManager;
+        $this->em     = $entityManager;
         $this->client = $client;
         $this->logger = $logger;
         parent::__construct();
@@ -95,11 +95,13 @@ EOT
 
         if (null === $lot) {
             $io->error("Lot #{$lotId} not found");
+
             return Command::FAILURE;
         }
 
-        if ($lot->getStatus() !== 'FAILED_CREATION') {
+        if ('FAILED_CREATION' !== $lot->getStatus()) {
             $io->warning("Lot #{$lotId} status is {$lot->getStatus()}, not FAILED_CREATION");
+
             return Command::FAILURE;
         }
 
@@ -107,10 +109,12 @@ EOT
 
         if ($success) {
             $io->success("Lot #{$lotId} created successfully in BpMessage");
+
             return Command::SUCCESS;
         }
 
         $io->error("Failed to create lot #{$lotId} in BpMessage");
+
         return Command::FAILURE;
     }
 
@@ -131,15 +135,16 @@ EOT
 
         if (empty($failedLots)) {
             $io->info('No failed lots found');
+
             return Command::SUCCESS;
         }
 
-        $io->text("Found " . count($failedLots) . " failed lot(s)");
+        $io->text('Found '.count($failedLots).' failed lot(s)');
 
         $stats = [
             'processed' => 0,
             'succeeded' => 0,
-            'failed' => 0,
+            'failed'    => 0,
         ];
 
         foreach ($failedLots as $lot) {
@@ -166,11 +171,13 @@ EOT
         );
 
         if ($stats['failed'] > 0) {
-            $io->warning("Some lots still failed. Check error messages and try again later.");
+            $io->warning('Some lots still failed. Check error messages and try again later.');
+
             return Command::FAILURE;
         }
 
-        $io->success("All failed lots have been successfully created in BpMessage");
+        $io->success('All failed lots have been successfully created in BpMessage');
+
         return Command::SUCCESS;
     }
 
@@ -179,11 +186,11 @@ EOT
         try {
             // Prepare lot data
             $lotData = [
-                'name' => $lot->getName(),
-                'startDate' => $lot->getStartDate()->format('c'),
-                'endDate' => $lot->getEndDate()->format('c'),
-                'user' => 'system',
-                'idQuotaSettings' => $lot->getIdQuotaSettings(),
+                'name'              => $lot->getName(),
+                'startDate'         => $lot->getStartDate()->format('c'),
+                'endDate'           => $lot->getEndDate()->format('c'),
+                'user'              => 'system',
+                'idQuotaSettings'   => $lot->getIdQuotaSettings(),
                 'idServiceSettings' => $lot->getIdServiceSettings(),
             ];
 
@@ -225,7 +232,7 @@ EOT
             $io->error("  Exception: {$e->getMessage()}");
 
             // Update error message
-            $lot->setErrorMessage('Exception: ' . $e->getMessage());
+            $lot->setErrorMessage('Exception: '.$e->getMessage());
             $this->em->flush();
 
             return false;
@@ -247,7 +254,7 @@ EOT
 
         if ($count > 0) {
             $io->text("  Found {$count} pending message(s) for this lot");
-            $io->text("  These will be processed on the next run of mautic:bpmessage:process");
+            $io->text('  These will be processed on the next run of mautic:bpmessage:process');
         }
     }
 }

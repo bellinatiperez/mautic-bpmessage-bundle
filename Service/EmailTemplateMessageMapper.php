@@ -14,7 +14,7 @@ use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
 use Psr\Log\LoggerInterface;
 
 /**
- * Service to map Mautic Email Template to BpMessage email format
+ * Service to map Mautic Email Template to BpMessage email format.
  */
 class EmailTemplateMessageMapper
 {
@@ -25,21 +25,21 @@ class EmailTemplateMessageMapper
     public function __construct(
         LoggerInterface $logger,
         EntityManagerInterface $entityManager,
-        MailHelper $mailHelper
+        MailHelper $mailHelper,
     ) {
-        $this->logger = $logger;
-        $this->em = $entityManager;
+        $this->logger     = $logger;
+        $this->em         = $entityManager;
         $this->mailHelper = $mailHelper;
     }
 
     /**
-     * Map a Lead to BpMessage email format using a template
+     * Map a Lead to BpMessage email format using a template.
      *
-     * @param Lead $lead
-     * @param array $config Action configuration
-     * @param Campaign $campaign
-     * @param BpMessageLot|null $lot Optional lot to get book_business_foreign_id from
+     * @param array             $config Action configuration
+     * @param BpMessageLot|null $lot    Optional lot to get book_business_foreign_id from
+     *
      * @return array BpMessage email data
+     *
      * @throws \InvalidArgumentException if required fields are missing
      */
     public function mapLeadToEmail(Lead $lead, array $config, Campaign $campaign, ?BpMessageLot $lot = null): array
@@ -63,7 +63,7 @@ class EmailTemplateMessageMapper
 
         // Get raw subject and body from template
         $rawSubject = $emailTemplate->getSubject();
-        $rawBody = $emailTemplate->getCustomHtml();
+        $rawBody    = $emailTemplate->getCustomHtml();
 
         // If no custom HTML, try to get from template content
         if (empty($rawBody)) {
@@ -72,15 +72,15 @@ class EmailTemplateMessageMapper
 
         // Apply token replacement manually using TokenHelper
         $subject = rawurldecode(TokenHelper::findLeadTokens($rawSubject, $contactValues, true));
-        $body = rawurldecode(TokenHelper::findLeadTokens($rawBody, $contactValues, true));
+        $body    = rawurldecode(TokenHelper::findLeadTokens($rawBody, $contactValues, true));
 
         // Build base email message
         $email = [
             'control' => $config['control'] ?? true,
-            'from' => $this->getFromAddress($emailTemplate, $config, $contactValues),
-            'to' => $this->getToAddress($lead, $config, $contactValues),
+            'from'    => $this->getFromAddress($emailTemplate, $config, $contactValues),
+            'to'      => $this->getToAddress($lead, $config, $contactValues),
             'subject' => $subject,
-            'body' => $body,
+            'body'    => $body,
         ];
 
         // Get book_business_foreign_id from lot (if available) or config
@@ -112,12 +112,7 @@ class EmailTemplateMessageMapper
     }
 
     /**
-     * Get from address (from template or override)
-     *
-     * @param Email $emailTemplate
-     * @param array $config
-     * @param array $contactValues
-     * @return string
+     * Get from address (from template or override).
      */
     private function getFromAddress(Email $emailTemplate, array $config, array $contactValues): string
     {
@@ -137,12 +132,7 @@ class EmailTemplateMessageMapper
     }
 
     /**
-     * Get to address (from lead or override)
-     *
-     * @param Lead $lead
-     * @param array $config
-     * @param array $contactValues
-     * @return string
+     * Get to address (from lead or override).
      */
     private function getToAddress(Lead $lead, array $config, array $contactValues): string
     {
@@ -164,10 +154,8 @@ class EmailTemplateMessageMapper
     }
 
     /**
-     * Process additional_data field with contact token replacement
+     * Process additional_data field with contact token replacement.
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array Processed key-value pairs
      */
     private function processAdditionalData(Lead $lead, array $config): array
@@ -186,8 +174,8 @@ class EmailTemplateMessageMapper
                 if (!isset($item['label']) || !isset($item['value'])) {
                     continue;
                 }
-                $key = $item['label'];
-                $value = $item['value'];
+                $key            = $item['label'];
+                $value          = $item['value'];
                 $processedValue = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
 
                 // Only add if value is not empty
@@ -212,10 +200,8 @@ class EmailTemplateMessageMapper
 
     /**
      * Process email_variables field with contact token replacement
-     * Returns array in format: [{"key": "string", "value": {}}]
+     * Returns array in format: [{"key": "string", "value": {}}].
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array Array of key-value objects
      */
     private function processEmailVariables(Lead $lead, array $config): array
@@ -225,7 +211,7 @@ class EmailTemplateMessageMapper
         }
 
         $contactValues = $this->getContactValues($lead);
-        $variables = [];
+        $variables     = [];
 
         $data = $config['email_variables'];
         if (isset($data['list'])) {
@@ -235,7 +221,7 @@ class EmailTemplateMessageMapper
                     continue;
                 }
                 $variables[] = [
-                    'key' => $item['label'],
+                    'key'   => $item['label'],
                     'value' => rawurldecode(TokenHelper::findLeadTokens($item['value'], $contactValues, true)),
                 ];
             }
@@ -243,7 +229,7 @@ class EmailTemplateMessageMapper
             // New format: direct key => value
             foreach ($data as $key => $value) {
                 $variables[] = [
-                    'key' => $key,
+                    'key'   => $key,
                     'value' => rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true)),
                 ];
             }
@@ -253,15 +239,12 @@ class EmailTemplateMessageMapper
     }
 
     /**
-     * Get contact values for token replacement
-     *
-     * @param Lead $lead
-     * @return array
+     * Get contact values for token replacement.
      */
     private function getContactValues(Lead $lead): array
     {
         // Try to get fields from Lead (for when loaded via LeadModel)
-        $fields = $lead->getFields(true);
+        $fields        = $lead->getFields(true);
         $contactValues = [];
 
         // Extract field values from getFields() if available
@@ -287,14 +270,14 @@ class EmailTemplateMessageMapper
                 }
 
                 // Try to get value via getter method
-                $getter = 'get' . ucfirst($propertyName);
+                $getter = 'get'.ucfirst($propertyName);
                 if (method_exists($lead, $getter)) {
                     try {
                         // Only call getter if it doesn't require parameters
                         $method = new \ReflectionMethod($lead, $getter);
-                        if ($method->getNumberOfRequiredParameters() === 0) {
+                        if (0 === $method->getNumberOfRequiredParameters()) {
                             $value = $lead->$getter();
-                            if ($value !== null && !is_object($value) && !is_array($value)) {
+                            if (null !== $value && !is_object($value) && !is_array($value)) {
                                 $contactValues[$propertyName] = $value;
                             }
                         }
@@ -323,10 +306,8 @@ class EmailTemplateMessageMapper
     }
 
     /**
-     * Process lot_data field with contact token replacement
+     * Process lot_data field with contact token replacement.
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array Processed key-value pairs
      */
     public function processLotData(Lead $lead, array $config): array
@@ -345,8 +326,8 @@ class EmailTemplateMessageMapper
                 if (!isset($item['label']) || !isset($item['value'])) {
                     continue;
                 }
-                $key = $item['label'];
-                $value = $item['value'];
+                $key            = $item['label'];
+                $value          = $item['value'];
                 $processedValue = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
 
                 // Only add if value is not empty
@@ -370,10 +351,8 @@ class EmailTemplateMessageMapper
     }
 
     /**
-     * Validate that a lead has all required fields for BpMessage email template
+     * Validate that a lead has all required fields for BpMessage email template.
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array ['valid' => bool, 'errors' => string[]]
      */
     public function validateLead(Lead $lead, array $config): array
@@ -394,7 +373,7 @@ class EmailTemplateMessageMapper
         }
 
         return [
-            'valid' => empty($errors),
+            'valid'  => empty($errors),
             'errors' => $errors,
         ];
     }

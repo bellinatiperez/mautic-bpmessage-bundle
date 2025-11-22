@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace MauticPlugin\MauticBpMessageBundle\Service;
 
 use Mautic\CampaignBundle\Entity\Campaign;
-use Mautic\CoreBundle\Helper\AbstractFormFieldHelper;
 use Mautic\LeadBundle\Entity\Lead;
 use Mautic\LeadBundle\Helper\TokenHelper;
 use Psr\Log\LoggerInterface;
 
 /**
- * Service to map Mautic Lead data to BpMessage message format
+ * Service to map Mautic Lead data to BpMessage message format.
  */
 class MessageMapper
 {
@@ -23,12 +22,12 @@ class MessageMapper
     }
 
     /**
-     * Map a Lead to BpMessage message format
+     * Map a Lead to BpMessage message format.
      *
-     * @param Lead $lead
      * @param array $config Action configuration
-     * @param Campaign $campaign
+     *
      * @return array BpMessage message data
+     *
      * @throws \InvalidArgumentException if required fields are missing
      */
     public function mapLeadToMessage(Lead $lead, array $config, Campaign $campaign): array
@@ -39,12 +38,12 @@ class MessageMapper
         ];
 
         // Add service type
-        $serviceType = (int) ($config['service_type'] ?? 2); // Default: WhatsApp
+        $serviceType              = (int) ($config['service_type'] ?? 2); // Default: WhatsApp
         $message['idServiceType'] = $serviceType;
 
         // Add message text for SMS/WhatsApp
         if (in_array($serviceType, [1, 2])) { // SMS or WhatsApp
-            $text = $config['message_text'] ?? '';
+            $text            = $config['message_text'] ?? '';
             $message['text'] = $this->processTokens($text, $lead);
         }
 
@@ -73,17 +72,16 @@ class MessageMapper
     }
 
     /**
-     * Extract phone number and area code from lead
+     * Extract phone number and area code from lead.
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array ['areaCode' => string, 'phone' => string]
+     *
      * @throws \InvalidArgumentException if phone is invalid
      */
     private function extractPhoneData(Lead $lead, array $config): array
     {
         $phoneField = $config['phone_field'] ?? 'mobile';
-        $phone = $lead->getFieldValue($phoneField);
+        $phone      = $lead->getFieldValue($phoneField);
 
         if (empty($phone)) {
             throw new \InvalidArgumentException("Phone field '{$phoneField}' is empty for lead {$lead->getId()}");
@@ -95,12 +93,12 @@ class MessageMapper
         // Extract area code and phone
         // Brazilian format: 11987654321 (DDD + number)
         if (strlen($phone) >= 10) {
-            $areaCode = substr($phone, 0, 2);
+            $areaCode    = substr($phone, 0, 2);
             $phoneNumber = substr($phone, 2);
 
             return [
                 'areaCode' => $areaCode,
-                'phone' => $phoneNumber,
+                'phone'    => $phoneNumber,
             ];
         }
 
@@ -108,13 +106,8 @@ class MessageMapper
     }
 
     /**
-     * Get field value from lead
+     * Get field value from lead.
      *
-     * @param Lead $lead
-     * @param array $config
-     * @param string $configKey
-     * @param bool $required
-     * @return string|null
      * @throws \InvalidArgumentException if required field is missing
      */
     private function getFieldValue(Lead $lead, array $config, string $configKey, bool $required = false): ?string
@@ -123,11 +116,12 @@ class MessageMapper
             if ($required) {
                 throw new \InvalidArgumentException("Configuration key '{$configKey}' is required but not set");
             }
+
             return null;
         }
 
         $fieldName = $config[$configKey];
-        $value = $lead->getFieldValue($fieldName);
+        $value     = $lead->getFieldValue($fieldName);
 
         if ($required && empty($value)) {
             throw new \InvalidArgumentException("Required field '{$fieldName}' is empty for lead {$lead->getId()}");
@@ -137,11 +131,7 @@ class MessageMapper
     }
 
     /**
-     * Process tokens in text (replace {contactfield=*} with actual values)
-     *
-     * @param string $text
-     * @param Lead $lead
-     * @return string
+     * Process tokens in text (replace {contactfield=*} with actual values).
      */
     private function processTokens(string $text, Lead $lead): string
     {
@@ -161,10 +151,8 @@ class MessageMapper
     }
 
     /**
-     * Process additional_data field with contact token replacement
+     * Process additional_data field with contact token replacement.
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array Processed key-value pairs
      */
     private function processAdditionalData(Lead $lead, array $config): array
@@ -187,8 +175,8 @@ class MessageMapper
                 if (!isset($item['label']) || !isset($item['value'])) {
                     continue;
                 }
-                $key = $item['label'];
-                $value = $item['value'];
+                $key                 = $item['label'];
+                $value               = $item['value'];
                 $processedData[$key] = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
             }
         } else {
@@ -202,10 +190,7 @@ class MessageMapper
     }
 
     /**
-     * Get contact values for token replacement (similar to Webhook CampaignHelper)
-     *
-     * @param Lead $lead
-     * @return array
+     * Get contact values for token replacement (similar to Webhook CampaignHelper).
      */
     private function getContactValues(Lead $lead): array
     {
@@ -232,10 +217,8 @@ class MessageMapper
     }
 
     /**
-     * Process lot_data field with contact token replacement
+     * Process lot_data field with contact token replacement.
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array Processed key-value pairs
      */
     public function processLotData(Lead $lead, array $config): array
@@ -258,8 +241,8 @@ class MessageMapper
                 if (!isset($item['label']) || !isset($item['value'])) {
                     continue;
                 }
-                $key = $item['label'];
-                $value = $item['value'];
+                $key                 = $item['label'];
+                $value               = $item['value'];
                 $processedData[$key] = rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true));
             }
         } else {
@@ -274,10 +257,8 @@ class MessageMapper
 
     /**
      * Process message_variables field with contact token replacement
-     * Returns array in format: [{"key": "string", "value": "string"}]
+     * Returns array in format: [{"key": "string", "value": "string"}].
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array Array of key-value objects
      */
     private function processMessageVariables(Lead $lead, array $config): array
@@ -301,7 +282,7 @@ class MessageMapper
                     continue;
                 }
                 $variables[] = [
-                    'key' => $item['label'],
+                    'key'   => $item['label'],
                     'value' => rawurldecode(TokenHelper::findLeadTokens($item['value'], $contactValues, true)),
                 ];
             }
@@ -309,7 +290,7 @@ class MessageMapper
             // New format: direct key => value
             foreach ($data as $key => $value) {
                 $variables[] = [
-                    'key' => $key,
+                    'key'   => $key,
                     'value' => rawurldecode(TokenHelper::findLeadTokens($value, $contactValues, true)),
                 ];
             }
@@ -319,32 +300,24 @@ class MessageMapper
     }
 
     /**
-     * Build metadata JSON string
-     *
-     * @param Lead $lead
-     * @param Campaign $campaign
-     * @return string
+     * Build metadata JSON string.
      */
     private function buildMetaData(Lead $lead, Campaign $campaign): string
     {
         $metadata = [
-            'source' => 'mautic',
-            'campaign_id' => $campaign->getId(),
+            'source'        => 'mautic',
+            'campaign_id'   => $campaign->getId(),
             'campaign_name' => $campaign->getName(),
-            'lead_id' => $lead->getId(),
-            'lead_email' => $lead->getEmail(),
-            'timestamp' => time(),
+            'lead_id'       => $lead->getId(),
+            'lead_email'    => $lead->getEmail(),
+            'timestamp'     => time(),
         ];
 
         return json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     /**
-     * Map variables for RCS templates
-     *
-     * @param Lead $lead
-     * @param array $config
-     * @return array
+     * Map variables for RCS templates.
      */
     private function mapVariablesForRCS(Lead $lead, array $config): array
     {
@@ -354,7 +327,7 @@ class MessageMapper
             $variableValues = [];
 
             foreach ($config['rcs_variables'] as $variable) {
-                $key = $variable['key'] ?? null;
+                $key          = $variable['key'] ?? null;
                 $fieldOrValue = $variable['value'] ?? '';
 
                 if (empty($key)) {
@@ -364,7 +337,7 @@ class MessageMapper
                 // Check if value is a token
                 if (preg_match('/\{contactfield=([a-zA-Z0-9_]+)\}/', $fieldOrValue, $matches)) {
                     $fieldName = $matches[1];
-                    $value = $lead->getFieldValue($fieldName);
+                    $value     = $lead->getFieldValue($fieldName);
                 } else {
                     // Use as literal value
                     $value = $fieldOrValue;
@@ -376,7 +349,7 @@ class MessageMapper
             // RCS expects format: [{"key": "variaveis_template", "value": {"Nome": "João"}}]
             if (!empty($variableValues)) {
                 $variables[] = [
-                    'key' => 'variaveis_template',
+                    'key'   => 'variaveis_template',
                     'value' => $variableValues,
                 ];
             }
@@ -386,10 +359,8 @@ class MessageMapper
     }
 
     /**
-     * Validate that a lead has all required fields for BpMessage
+     * Validate that a lead has all required fields for BpMessage.
      *
-     * @param Lead $lead
-     * @param array $config
      * @return array ['valid' => bool, 'errors' => string[]]
      */
     public function validateLead(Lead $lead, array $config): array
@@ -411,7 +382,7 @@ class MessageMapper
         // This allows for more flexibility in field configuration
 
         return [
-            'valid' => empty($errors),
+            'valid'  => empty($errors),
             'errors' => $errors,
         ];
     }

@@ -94,8 +94,8 @@ class Engine
         }
 
         // Filter only PHP files
-        $phpFiles = array_filter($fileNames, function($fileName) {
-            return pathinfo($fileName, PATHINFO_EXTENSION) === 'php';
+        $phpFiles = array_filter($fileNames, function ($fileName) {
+            return 'php' === pathinfo($fileName, PATHINFO_EXTENSION);
         });
 
         return array_values($phpFiles);

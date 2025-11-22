@@ -19,7 +19,7 @@ use Twig\Environment;
 
 /**
  * Controller for managing BpMessage batches/lots
- * Compatible with Mautic 5+ / 7.0
+ * Compatible with Mautic 5+ / 7.0.
  */
 class BatchController
 {
@@ -36,22 +36,22 @@ class BatchController
         FlashBag $flashBag,
         Environment $twig,
         BpMessageModel $bpMessageModel,
-        UrlGeneratorInterface $urlGenerator
+        UrlGeneratorInterface $urlGenerator,
     ) {
-        $this->doctrine = $doctrine;
-        $this->translator = $translator;
-        $this->flashBag = $flashBag;
-        $this->twig = $twig;
+        $this->doctrine       = $doctrine;
+        $this->translator     = $translator;
+        $this->flashBag       = $flashBag;
+        $this->twig           = $twig;
         $this->bpMessageModel = $bpMessageModel;
-        $this->urlGenerator = $urlGenerator;
+        $this->urlGenerator   = $urlGenerator;
     }
 
     /**
-     * List all lots
+     * List all lots.
      */
     public function indexAction(Request $request, int $page = 1): Response
     {
-        $limit = 20;
+        $limit  = 20;
         $offset = ($page - 1) * $limit;
 
         // Get entity manager
@@ -88,33 +88,33 @@ class BatchController
                 ->getResult();
 
             $lotStats[$lot->getId()] = [
-                'total' => 0,
+                'total'   => 0,
                 'pending' => 0,
-                'sent' => 0,
-                'failed' => 0,
+                'sent'    => 0,
+                'failed'  => 0,
             ];
 
             foreach ($stats as $stat) {
                 $lotStats[$lot->getId()]['total'] += $stat['count'];
-                $status = strtolower($stat['status']);
+                $status                           = strtolower($stat['status']);
                 $lotStats[$lot->getId()][$status] = $stat['count'];
             }
         }
 
         $content = $this->twig->render('@MauticBpMessage/Batch/list.html.twig', [
-            'lots' => $lots,
-            'lotStats' => $lotStats,
-            'page' => $page,
-            'totalPages' => $totalPages,
-            'totalCount' => $totalCount,
-            'activeLink' => '#mautic_bpmessage_lot_index',
+            'lots'          => $lots,
+            'lotStats'      => $lotStats,
+            'page'          => $page,
+            'totalPages'    => $totalPages,
+            'totalCount'    => $totalCount,
+            'activeLink'    => '#mautic_bpmessage_lot_index',
             'mauticContent' => 'bpmessageLot',
         ]);
 
         if ($request->isXmlHttpRequest()) {
             return new JsonResponse([
-                'newContent' => $content,
-                'route' => $this->urlGenerator->generate('mautic_bpmessage_lot_index', ['page' => $page]),
+                'newContent'    => $content,
+                'route'         => $this->urlGenerator->generate('mautic_bpmessage_lot_index', ['page' => $page]),
                 'mauticContent' => 'bpmessageLot',
             ]);
         }
@@ -123,7 +123,7 @@ class BatchController
     }
 
     /**
-     * View lot details
+     * View lot details.
      */
     public function viewAction(Request $request, int $id): Response
     {
@@ -159,30 +159,30 @@ class BatchController
             ->getResult();
 
         $statistics = [
-            'total' => 0,
+            'total'   => 0,
             'pending' => 0,
-            'sent' => 0,
-            'failed' => 0,
+            'sent'    => 0,
+            'failed'  => 0,
         ];
 
         foreach ($stats as $stat) {
             $statistics['total'] += $stat['count'];
-            $status = strtolower($stat['status']);
+            $status              = strtolower($stat['status']);
             $statistics[$status] = $stat['count'];
         }
 
         $content = $this->twig->render('@MauticBpMessage/Batch/view.html.twig', [
-            'lot' => $lot,
-            'messages' => $messages,
-            'statistics' => $statistics,
-            'activeLink' => '#mautic_bpmessage_lot_index',
+            'lot'           => $lot,
+            'messages'      => $messages,
+            'statistics'    => $statistics,
+            'activeLink'    => '#mautic_bpmessage_lot_index',
             'mauticContent' => 'bpmessageLot',
         ]);
 
         if ($request->isXmlHttpRequest()) {
             return new JsonResponse([
-                'newContent' => $content,
-                'route' => $this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]),
+                'newContent'    => $content,
+                'route'         => $this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]),
                 'mauticContent' => 'bpmessageLot',
             ]);
         }
@@ -191,7 +191,7 @@ class BatchController
     }
 
     /**
-     * Reprocess a failed lot
+     * Reprocess a failed lot.
      */
     public function reprocessAction(Request $request, int $id): Response
     {
@@ -224,7 +224,7 @@ class BatchController
             ->execute();
 
         // Reset lot status
-        if ($lot->getStatus() === 'FAILED' || $lot->getStatus() === 'FINISHED') {
+        if ('FAILED' === $lot->getStatus() || 'FINISHED' === $lot->getStatus()) {
             $lot->setStatus('OPEN');
             $lot->setErrorMessage(null);
             $lot->setFinishedAt(null);
@@ -246,7 +246,7 @@ class BatchController
     }
 
     /**
-     * Process pending lots manually
+     * Process pending lots manually.
      */
     public function processAction(Request $request): Response
     {
@@ -257,11 +257,11 @@ class BatchController
 
         if ($request->isXmlHttpRequest()) {
             return new JsonResponse([
-                'success' => $stats['failed'] === 0,
-                'stats' => $stats,
+                'success' => 0 === $stats['failed'],
+                'stats'   => $stats,
                 'message' => $this->translator->trans('mautic.bpmessage.lot.processed', [
                     '%succeeded%' => $stats['succeeded'],
-                    '%failed%' => $stats['failed'],
+                    '%failed%'    => $stats['failed'],
                 ]),
             ]);
         }
@@ -270,7 +270,7 @@ class BatchController
         $this->flashBag->add(
             $this->translator->trans('mautic.bpmessage.lot.processed', [
                 '%succeeded%' => $stats['succeeded'],
-                '%failed%' => $stats['failed'],
+                '%failed%'    => $stats['failed'],
             ]),
             $flashType
         );

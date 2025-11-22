@@ -12,7 +12,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Command to cleanup old BpMessage lots and messages
+ * Command to cleanup old BpMessage lots and messages.
  */
 class CleanupBpMessageCommand extends Command
 {
@@ -64,7 +64,7 @@ EOT
     {
         $io = new SymfonyStyle($input, $output);
 
-        $days = (int) $input->getOption('days');
+        $days   = (int) $input->getOption('days');
         $dryRun = $input->getOption('dry-run');
 
         $io->title('BpMessage Cleanup');
@@ -79,6 +79,7 @@ EOT
             if ($dryRun) {
                 $io->info('Dry run mode - skipping actual deletion');
                 $io->note('Run without --dry-run to perform actual cleanup');
+
                 return Command::SUCCESS;
             }
 
@@ -100,6 +101,7 @@ EOT
             return Command::SUCCESS;
         } catch (\Exception $e) {
             $io->error("Error during cleanup: {$e->getMessage()}");
+
             return Command::FAILURE;
         }
     }

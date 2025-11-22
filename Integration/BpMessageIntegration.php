@@ -24,12 +24,12 @@ use Symfony\Component\Routing\RouterInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
- * BpMessage Integration for plugin configuration
+ * BpMessage Integration for plugin configuration.
  */
 class BpMessageIntegration extends AbstractIntegration
 {
     /**
-     * Constructor with all required dependencies
+     * Constructor with all required dependencies.
      */
     public function __construct(
         EventDispatcherInterface $dispatcher,
@@ -117,11 +117,11 @@ class BpMessageIntegration extends AbstractIntegration
     }
 
     /**
-     * Add configuration fields
+     * Add configuration fields.
      *
      * @param \Mautic\PluginBundle\Integration\Form|FormBuilder $builder
-     * @param array $data
-     * @param string $formArea
+     * @param array                                             $data
+     * @param string                                            $formArea
      */
     public function appendToForm(&$builder, $data, $formArea): void
     {
@@ -130,13 +130,13 @@ class BpMessageIntegration extends AbstractIntegration
                 'api_base_url',
                 TextType::class,
                 [
-                    'label' => 'mautic.bpmessage.integration.api_base_url',
+                    'label'      => 'mautic.bpmessage.integration.api_base_url',
                     'label_attr' => ['class' => 'control-label'],
-                    'required' => true,
-                    'data' => $data['api_base_url'] ?? 'https://api.bpmessage.com.br',
-                    'attr' => [
-                        'class' => 'form-control',
-                        'tooltip' => 'mautic.bpmessage.integration.api_base_url.tooltip',
+                    'required'   => true,
+                    'data'       => $data['api_base_url'] ?? 'https://api.bpmessage.com.br',
+                    'attr'       => [
+                        'class'       => 'form-control',
+                        'tooltip'     => 'mautic.bpmessage.integration.api_base_url.tooltip',
                         'placeholder' => 'https://api.bpmessage.com.br',
                     ],
                 ]
@@ -146,15 +146,15 @@ class BpMessageIntegration extends AbstractIntegration
                 'default_batch_size',
                 \Symfony\Component\Form\Extension\Core\Type\IntegerType::class,
                 [
-                    'label' => 'mautic.bpmessage.integration.default_batch_size',
+                    'label'      => 'mautic.bpmessage.integration.default_batch_size',
                     'label_attr' => ['class' => 'control-label'],
-                    'required' => false,
-                    'data' => $data['default_batch_size'] ?? 1000,
-                    'attr' => [
-                        'class' => 'form-control',
+                    'required'   => false,
+                    'data'       => $data['default_batch_size'] ?? 1000,
+                    'attr'       => [
+                        'class'   => 'form-control',
                         'tooltip' => 'mautic.bpmessage.integration.default_batch_size.tooltip',
-                        'min' => 1,
-                        'max' => 5000,
+                        'min'     => 1,
+                        'max'     => 5000,
                     ],
                 ]
             );
@@ -163,15 +163,15 @@ class BpMessageIntegration extends AbstractIntegration
                 'default_time_window',
                 \Symfony\Component\Form\Extension\Core\Type\IntegerType::class,
                 [
-                    'label' => 'mautic.bpmessage.integration.default_time_window',
+                    'label'      => 'mautic.bpmessage.integration.default_time_window',
                     'label_attr' => ['class' => 'control-label'],
-                    'required' => false,
-                    'data' => $data['default_time_window'] ?? 300,
-                    'attr' => [
-                        'class' => 'form-control',
+                    'required'   => false,
+                    'data'       => $data['default_time_window'] ?? 300,
+                    'attr'       => [
+                        'class'   => 'form-control',
                         'tooltip' => 'mautic.bpmessage.integration.default_time_window.tooltip',
-                        'min' => 60,
-                        'max' => 3600,
+                        'min'     => 60,
+                        'max'     => 3600,
                     ],
                 ]
             );
@@ -179,9 +179,7 @@ class BpMessageIntegration extends AbstractIntegration
     }
 
     /**
-     * Get API Base URL from integration settings
-     *
-     * @return string|null
+     * Get API Base URL from integration settings.
      */
     public function getApiBaseUrl(): ?string
     {
@@ -191,9 +189,7 @@ class BpMessageIntegration extends AbstractIntegration
     }
 
     /**
-     * Get default batch size from integration settings
-     *
-     * @return int
+     * Get default batch size from integration settings.
      */
     public function getDefaultBatchSize(): int
     {
@@ -203,9 +199,7 @@ class BpMessageIntegration extends AbstractIntegration
     }
 
     /**
-     * Get default time window from integration settings
-     *
-     * @return int
+     * Get default time window from integration settings.
      */
     public function getDefaultTimeWindow(): int
     {

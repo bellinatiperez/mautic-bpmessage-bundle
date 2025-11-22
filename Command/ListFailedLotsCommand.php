@@ -13,7 +13,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Command to list lots with errors
+ * Command to list lots with errors.
  */
 class ListFailedLotsCommand extends Command
 {
@@ -54,7 +54,7 @@ EOT
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $io = new SymfonyStyle($input, $output);
+        $io    = new SymfonyStyle($input, $output);
         $limit = (int) $input->getOption('limit');
 
         $io->title('BpMessage Lots with Errors');
@@ -77,6 +77,7 @@ EOT
 
         if (empty($lots)) {
             $io->success('No failed lots found!');
+
             return Command::SUCCESS;
         }
 
@@ -88,9 +89,9 @@ EOT
         /** @var BpMessageLot $lot */
         foreach ($lots as $lot) {
             $serviceTypeName = match ($lot->getServiceType()) {
-                1 => 'SMS',
-                2 => 'WhatsApp',
-                3 => 'RCS',
+                1       => 'SMS',
+                2       => 'WhatsApp',
+                3       => 'RCS',
                 default => 'Unknown',
             };
 
@@ -98,7 +99,7 @@ EOT
 
             // Truncate error message if too long for table display
             if (strlen($errorMessage) > 100) {
-                $errorMessage = substr($errorMessage, 0, 97) . '...';
+                $errorMessage = substr($errorMessage, 0, 97).'...';
             }
 
             $tableData[] = [
@@ -124,7 +125,7 @@ EOT
             foreach ($lots as $lot) {
                 $io->writeln("<fg=cyan>Lot #{$lot->getId()}: {$lot->getName()}</>");
                 $io->writeln("<fg=yellow>Status:</> {$lot->getStatus()}");
-                $io->writeln("<fg=yellow>Error:</>");
+                $io->writeln('<fg=yellow>Error:</>');
                 $io->writeln("<fg=red>  {$lot->getErrorMessage()}</>");
                 $io->newLine();
             }

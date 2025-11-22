@@ -16,7 +16,7 @@ use MauticPlugin\MauticBpMessageBundle\Service\MessageMapper;
 use Psr\Log\LoggerInterface;
 
 /**
- * Model for BpMessage operations
+ * Model for BpMessage operations.
  */
 class BpMessageModel
 {
@@ -31,21 +31,20 @@ class BpMessageModel
         MessageMapper $messageMapper,
         EntityManager $entityManager,
         LoggerInterface $logger,
-        IntegrationHelper $integrationHelper
+        IntegrationHelper $integrationHelper,
     ) {
-        $this->lotManager = $lotManager;
-        $this->messageMapper = $messageMapper;
-        $this->em = $entityManager;
-        $this->logger = $logger;
+        $this->lotManager        = $lotManager;
+        $this->messageMapper     = $messageMapper;
+        $this->em                = $entityManager;
+        $this->logger            = $logger;
         $this->integrationHelper = $integrationHelper;
     }
 
     /**
-     * Send a message for a lead (called from campaign action)
+     * Send a message for a lead (called from campaign action).
      *
-     * @param Lead $lead
      * @param array $config Campaign action configuration
-     * @param Campaign $campaign
+     *
      * @return array ['success' => bool, 'message' => string]
      */
     public function sendMessage(Lead $lead, array $config, Campaign $campaign): array
@@ -61,8 +60,8 @@ class BpMessageModel
             }
 
             // Add integration settings to config
-            $config['api_base_url'] = $apiBaseUrl;
-            $config['default_batch_size'] = $this->getDefaultBatchSize();
+            $config['api_base_url']        = $apiBaseUrl;
+            $config['default_batch_size']  = $this->getDefaultBatchSize();
             $config['default_time_window'] = $this->getDefaultTimeWindow();
 
             // Validate configuration
@@ -74,7 +73,7 @@ class BpMessageModel
                 $errorMsg = implode('; ', $validation['errors']);
                 $this->logger->warning('BpMessage: Lead validation failed', [
                     'lead_id' => $lead->getId(),
-                    'errors' => $errorMsg,
+                    'errors'  => $errorMsg,
                 ]);
 
                 return [
@@ -98,8 +97,8 @@ class BpMessageModel
             $this->lotManager->queueMessage($lot, $lead, $messageData);
 
             $this->logger->info('BpMessage: Message queued successfully', [
-                'lead_id' => $lead->getId(),
-                'lot_id' => $lot->getId(),
+                'lead_id'     => $lead->getId(),
+                'lot_id'      => $lot->getId(),
                 'campaign_id' => $campaign->getId(),
             ]);
 
@@ -109,9 +108,9 @@ class BpMessageModel
             ];
         } catch (\Exception $e) {
             $this->logger->error('BpMessage: Failed to send message', [
-                'lead_id' => $lead->getId(),
+                'lead_id'     => $lead->getId(),
                 'campaign_id' => $campaign->getId(),
-                'error' => $e->getMessage(),
+                'error'       => $e->getMessage(),
             ]);
 
             return [
@@ -122,7 +121,7 @@ class BpMessageModel
     }
 
     /**
-     * Process open lots that should be closed
+     * Process open lots that should be closed.
      *
      * @return array ['processed' => int, 'succeeded' => int, 'failed' => int]
      */
@@ -153,16 +152,16 @@ class BpMessageModel
         $stats = [
             'processed' => 0,
             'succeeded' => 0,
-            'failed' => 0,
+            'failed'    => 0,
         ];
 
         foreach ($lotsToClose as $lot) {
             ++$stats['processed'];
 
             $this->logger->info('BpMessage: Processing lot', [
-                'lot_id' => $lot->getId(),
+                'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
-                'messages_count' => $lot->getMessagesCount(),
+                'messages_count'  => $lot->getMessagesCount(),
             ]);
 
             try {
@@ -178,7 +177,7 @@ class BpMessageModel
 
                 $this->logger->error('BpMessage: Failed to process lot', [
                     'lot_id' => $lot->getId(),
-                    'error' => $e->getMessage(),
+                    'error'  => $e->getMessage(),
                 ]);
             }
         }
@@ -187,10 +186,8 @@ class BpMessageModel
     }
 
     /**
-     * Retry failed messages
+     * Retry failed messages.
      *
-     * @param int $maxRetries
-     * @param int|null $limit
      * @return int Number of messages retried
      */
     public function retryFailedMessages(int $maxRetries = 3, ?int $limit = null): int
@@ -199,9 +196,8 @@ class BpMessageModel
     }
 
     /**
-     * Clean up old lots and messages
+     * Clean up old lots and messages.
      *
-     * @param int $days
      * @return array ['lots_deleted' => int, 'messages_deleted' => int]
      */
     public function cleanup(int $days = 30): array
@@ -209,7 +205,7 @@ class BpMessageModel
         $threshold = new \DateTime();
         $threshold->modify("-{$days} days");
 
-        $qb = $this->em->createQueryBuilder();
+        $qb          = $this->em->createQueryBuilder();
         $lotsDeleted = $qb->delete(BpMessageLot::class, 'l')
             ->where('l.status = :status')
             ->andWhere('l.finishedAt < :threshold')
@@ -222,7 +218,7 @@ class BpMessageModel
 
         $this->logger->info('BpMessage: Cleanup completed', [
             'lots_deleted' => $lotsDeleted,
-            'days' => $days,
+            'days'         => $days,
         ]);
 
         return [
@@ -231,10 +227,7 @@ class BpMessageModel
     }
 
     /**
-     * Get statistics for a campaign
-     *
-     * @param int $campaignId
-     * @return array
+     * Get statistics for a campaign.
      */
     public function getCampaignStats(int $campaignId): array
     {
@@ -245,9 +238,7 @@ class BpMessageModel
     }
 
     /**
-     * Get API Base URL from integration
-     *
-     * @return string|null
+     * Get API Base URL from integration.
      */
     private function getApiBaseUrl(): ?string
     {
@@ -256,6 +247,7 @@ class BpMessageModel
 
         if (!$integration) {
             $this->logger->warning('BpMessage: Integration not found');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -263,6 +255,7 @@ class BpMessageModel
 
         if (!$settings || !$settings->getIsPublished()) {
             $this->logger->warning('BpMessage: Integration not published');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -270,6 +263,7 @@ class BpMessageModel
 
         if (!$apiUrl) {
             $this->logger->warning('BpMessage: API URL not configured, using default');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -281,9 +275,7 @@ class BpMessageModel
     }
 
     /**
-     * Get default batch size from integration
-     *
-     * @return int
+     * Get default batch size from integration.
      */
     private function getDefaultBatchSize(): int
     {
@@ -304,9 +296,7 @@ class BpMessageModel
     }
 
     /**
-     * Get default time window from integration
-     *
-     * @return int
+     * Get default time window from integration.
      */
     private function getDefaultTimeWindow(): int
     {
@@ -327,9 +317,8 @@ class BpMessageModel
     }
 
     /**
-     * Validate configuration
+     * Validate configuration.
      *
-     * @param array $config
      * @throws \InvalidArgumentException
      */
     private function validateConfig(array $config): void
@@ -369,10 +358,7 @@ class BpMessageModel
     }
 
     /**
-     * Force close a specific lot
-     *
-     * @param int $lotId
-     * @return bool
+     * Force close a specific lot.
      */
     public function forceCloseLot(int $lotId): bool
     {
@@ -383,6 +369,7 @@ class BpMessageModel
 
         if (null === $lot) {
             $this->logger->error('BpMessage: Lot not found', ['lot_id' => $lotId]);
+
             return false;
         }
 
@@ -391,6 +378,7 @@ class BpMessageModel
                 'lot_id' => $lotId,
                 'status' => $lot->getStatus(),
             ]);
+
             return false;
         }
 
@@ -399,16 +387,18 @@ class BpMessageModel
         } catch (\Exception $e) {
             $this->logger->error('BpMessage: Failed to force close lot', [
                 'lot_id' => $lotId,
-                'error' => $e->getMessage(),
+                'error'  => $e->getMessage(),
             ]);
+
             return false;
         }
     }
 
     /**
-     * Process pending lots (OPEN lots that are ready to be closed)
+     * Process pending lots (OPEN lots that are ready to be closed).
      *
      * @param int $limit Maximum number of lots to process
+     *
      * @return array ['processed' => int, 'succeeded' => int, 'failed' => int]
      */
     public function processPendingLots(int $limit = 10): array
@@ -426,7 +416,7 @@ class BpMessageModel
         $stats = [
             'processed' => 0,
             'succeeded' => 0,
-            'failed' => 0,
+            'failed'    => 0,
         ];
 
         foreach ($lots as $lot) {
@@ -455,7 +445,7 @@ class BpMessageModel
                 ++$stats['failed'];
                 $this->logger->error('BpMessage: Exception while processing lot', [
                     'lot_id' => $lot->getId(),
-                    'error' => $e->getMessage(),
+                    'error'  => $e->getMessage(),
                 ]);
             }
         }
@@ -464,22 +454,18 @@ class BpMessageModel
     }
 
     /**
-     * Get a lot by ID
-     *
-     * @param int $lotId
-     * @return BpMessageLot|null
+     * Get a lot by ID.
      */
     public function getLotById(int $lotId): ?BpMessageLot
     {
         /** @var BpMessageLotRepository $repository */
         $repository = $this->em->getRepository(BpMessageLot::class);
+
         return $repository->find($lotId);
     }
 
     /**
-     * Get EntityManager
-     *
-     * @return EntityManager
+     * Get EntityManager.
      */
     public function getEntityManager(): EntityManager
     {

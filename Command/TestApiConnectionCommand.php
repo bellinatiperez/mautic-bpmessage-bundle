@@ -15,7 +15,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Command to test BpMessage API connection and operations
+ * Command to test BpMessage API connection and operations.
  */
 class TestApiConnectionCommand extends Command
 {
@@ -26,10 +26,10 @@ class TestApiConnectionCommand extends Command
     public function __construct(
         BpMessageClient $client,
         LoggerInterface $logger,
-        IntegrationHelper $integrationHelper
+        IntegrationHelper $integrationHelper,
     ) {
-        $this->client = $client;
-        $this->logger = $logger;
+        $this->client            = $client;
+        $this->logger            = $logger;
         $this->integrationHelper = $integrationHelper;
         parent::__construct();
     }
@@ -93,6 +93,7 @@ EOT
 
         if (!$integration) {
             $io->error('BpMessage integration not found. Please configure it in Settings > Plugins.');
+
             return Command::FAILURE;
         }
 
@@ -100,6 +101,7 @@ EOT
 
         if (!$settings || !$settings->getIsPublished()) {
             $io->error('BpMessage integration is not published. Please enable it in Settings > Plugins.');
+
             return Command::FAILURE;
         }
 
@@ -107,6 +109,7 @@ EOT
 
         if (!$apiUrl) {
             $io->error('API Base URL not configured. Please configure it in the integration settings.');
+
             return Command::FAILURE;
         }
 
@@ -116,7 +119,7 @@ EOT
             [
                 ['API Base URL', $apiUrl],
                 ['Default Batch Size', $integration->getDefaultBatchSize()],
-                ['Default Time Window', $integration->getDefaultTimeWindow() . ' seconds'],
+                ['Default Time Window', $integration->getDefaultTimeWindow().' seconds'],
             ]
         );
 
@@ -129,11 +132,12 @@ EOT
 
         // Full test
         if ($input->getOption('full-test')) {
-            $idQuota = $input->getOption('id-quota');
+            $idQuota   = $input->getOption('id-quota');
             $idService = $input->getOption('id-service');
 
             if (!$idQuota || !$idService) {
                 $io->error('Please provide --id-quota and --id-service for full test');
+
                 return Command::FAILURE;
             }
 
@@ -154,10 +158,12 @@ EOT
 
         if ($result['success']) {
             $io->success('✓ Connection successful!');
+
             return Command::SUCCESS;
         }
 
-        $io->error('✗ Connection failed: ' . $result['error']);
+        $io->error('✗ Connection failed: '.$result['error']);
+
         return Command::FAILURE;
     }
 
@@ -169,11 +175,11 @@ EOT
         $io->writeln('<info>Step 1: Creating lot...</info>');
 
         $lotData = [
-            'name' => 'Test Lot - ' . date('Y-m-d H:i:s'),
-            'startDate' => (new \DateTime())->format('c'),
-            'endDate' => (new \DateTime())->format('c'),
-            'user' => 'system',
-            'idQuotaSettings' => $idQuota,
+            'name'              => 'Test Lot - '.date('Y-m-d H:i:s'),
+            'startDate'         => (new \DateTime())->format('c'),
+            'endDate'           => (new \DateTime())->format('c'),
+            'user'              => 'system',
+            'idQuotaSettings'   => $idQuota,
             'idServiceSettings' => $idService,
         ];
 
@@ -184,7 +190,8 @@ EOT
         $createResult = $this->client->createLot($lotData);
 
         if (!$createResult['success']) {
-            $io->error('✗ Failed to create lot: ' . $createResult['error']);
+            $io->error('✗ Failed to create lot: '.$createResult['error']);
+
             return Command::FAILURE;
         }
 
@@ -197,34 +204,34 @@ EOT
 
         $messages = [
             [
-                'control' => true,
+                'control'  => true,
                 'metaData' => json_encode([
-                    'source' => 'mautic_test',
+                    'source'    => 'mautic_test',
                     'timestamp' => time(),
                 ]),
                 'idForeignBookBusiness' => '11002',
-                'contactName' => 'Test Contact 1',
-                'idServiceType' => 2, // WhatsApp
-                'text' => 'Test message 1 - ' . date('H:i:s'),
-                'contract' => 'TEST001',
-                'cpfCnpjReceiver' => '12345678901',
-                'areaCode' => '48',
-                'phone' => '999999999',
+                'contactName'           => 'Test Contact 1',
+                'idServiceType'         => 2, // WhatsApp
+                'text'                  => 'Test message 1 - '.date('H:i:s'),
+                'contract'              => 'TEST001',
+                'cpfCnpjReceiver'       => '12345678901',
+                'areaCode'              => '48',
+                'phone'                 => '999999999',
             ],
             [
-                'control' => true,
+                'control'  => true,
                 'metaData' => json_encode([
-                    'source' => 'mautic_test',
+                    'source'    => 'mautic_test',
                     'timestamp' => time(),
                 ]),
                 'idForeignBookBusiness' => '11002',
-                'contactName' => 'Test Contact 2',
-                'idServiceType' => 2, // WhatsApp
-                'text' => 'Test message 2 - ' . date('H:i:s'),
-                'contract' => 'TEST002',
-                'cpfCnpjReceiver' => '98765432109',
-                'areaCode' => '11',
-                'phone' => '888888888',
+                'contactName'           => 'Test Contact 2',
+                'idServiceType'         => 2, // WhatsApp
+                'text'                  => 'Test message 2 - '.date('H:i:s'),
+                'contract'              => 'TEST002',
+                'cpfCnpjReceiver'       => '98765432109',
+                'areaCode'              => '11',
+                'phone'                 => '888888888',
             ],
         ];
 
@@ -235,8 +242,9 @@ EOT
         $addResult = $this->client->addMessagesToLot($idLot, $messages);
 
         if (!$addResult['success']) {
-            $io->error('✗ Failed to add messages: ' . $addResult['error']);
+            $io->error('✗ Failed to add messages: '.$addResult['error']);
             $io->warning("Lot {$idLot} was created but messages were not added. You may need to manually clean it up.");
+
             return Command::FAILURE;
         }
 
@@ -249,11 +257,12 @@ EOT
         $finishResult = $this->client->finishLot($idLot);
 
         if (!$finishResult['success']) {
-            $io->error('✗ Failed to finish lot: ' . $finishResult['error']);
+            $io->error('✗ Failed to finish lot: '.$finishResult['error']);
+
             return Command::FAILURE;
         }
 
-        $io->success("✓ Lot finished successfully!");
+        $io->success('✓ Lot finished successfully!');
         $io->newLine();
 
         $io->success([

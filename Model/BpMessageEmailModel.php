@@ -15,7 +15,7 @@ use MauticPlugin\MauticBpMessageBundle\Service\EmailMessageMapper;
 use Psr\Log\LoggerInterface;
 
 /**
- * Model for BpMessage email operations
+ * Model for BpMessage email operations.
  */
 class BpMessageEmailModel
 {
@@ -30,21 +30,20 @@ class BpMessageEmailModel
         EmailMessageMapper $messageMapper,
         EntityManager $entityManager,
         LoggerInterface $logger,
-        IntegrationHelper $integrationHelper
+        IntegrationHelper $integrationHelper,
     ) {
-        $this->lotManager = $lotManager;
-        $this->messageMapper = $messageMapper;
-        $this->em = $entityManager;
-        $this->logger = $logger;
+        $this->lotManager        = $lotManager;
+        $this->messageMapper     = $messageMapper;
+        $this->em                = $entityManager;
+        $this->logger            = $logger;
         $this->integrationHelper = $integrationHelper;
     }
 
     /**
-     * Send an email for a lead (called from campaign action)
+     * Send an email for a lead (called from campaign action).
      *
-     * @param Lead $lead
      * @param array $config Campaign action configuration
-     * @param Campaign $campaign
+     *
      * @return array ['success' => bool, 'message' => string]
      */
     public function sendEmail(Lead $lead, array $config, Campaign $campaign): array
@@ -60,8 +59,8 @@ class BpMessageEmailModel
             }
 
             // Add integration settings to config
-            $config['api_base_url'] = $apiBaseUrl;
-            $config['default_batch_size'] = $this->getDefaultBatchSize();
+            $config['api_base_url']        = $apiBaseUrl;
+            $config['default_batch_size']  = $this->getDefaultBatchSize();
             $config['default_time_window'] = $this->getDefaultTimeWindow();
 
             // Validate lead
@@ -70,7 +69,7 @@ class BpMessageEmailModel
                 $errorMsg = implode('; ', $validation['errors']);
                 $this->logger->warning('BpMessage Email: Lead validation failed', [
                     'lead_id' => $lead->getId(),
-                    'errors' => $errorMsg,
+                    'errors'  => $errorMsg,
                 ]);
 
                 return [
@@ -94,8 +93,8 @@ class BpMessageEmailModel
             $this->lotManager->queueEmail($lot, $lead, $emailData);
 
             $this->logger->info('BpMessage Email: Email queued successfully', [
-                'lead_id' => $lead->getId(),
-                'lot_id' => $lot->getId(),
+                'lead_id'     => $lead->getId(),
+                'lot_id'      => $lot->getId(),
                 'campaign_id' => $campaign->getId(),
             ]);
 
@@ -105,9 +104,9 @@ class BpMessageEmailModel
             ];
         } catch (\Exception $e) {
             $this->logger->error('BpMessage Email: Failed to send email', [
-                'lead_id' => $lead->getId(),
+                'lead_id'     => $lead->getId(),
                 'campaign_id' => $campaign->getId(),
-                'error' => $e->getMessage(),
+                'error'       => $e->getMessage(),
             ]);
 
             return [
@@ -118,9 +117,10 @@ class BpMessageEmailModel
     }
 
     /**
-     * Process open email lots that should be closed
+     * Process open email lots that should be closed.
      *
      * @param bool $forceClose Force close all open lots regardless of time/count criteria
+     *
      * @return array ['processed' => int, 'succeeded' => int, 'failed' => int]
      */
     public function processOpenLots(bool $forceClose = false): array
@@ -150,16 +150,16 @@ class BpMessageEmailModel
         $stats = [
             'processed' => 0,
             'succeeded' => 0,
-            'failed' => 0,
+            'failed'    => 0,
         ];
 
         foreach ($lotsToClose as $lot) {
             ++$stats['processed'];
 
             $this->logger->info('BpMessage Email: Processing lot', [
-                'lot_id' => $lot->getId(),
+                'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
-                'messages_count' => $lot->getMessagesCount(),
+                'messages_count'  => $lot->getMessagesCount(),
             ]);
 
             try {
@@ -175,7 +175,7 @@ class BpMessageEmailModel
 
                 $this->logger->error('BpMessage Email: Failed to process lot', [
                     'lot_id' => $lot->getId(),
-                    'error' => $e->getMessage(),
+                    'error'  => $e->getMessage(),
                 ]);
             }
         }
@@ -185,9 +185,10 @@ class BpMessageEmailModel
 
     /**
      * Process orphaned CREATING lots (lots stuck in CREATING status)
-     * Marks them as FAILED if they've been in CREATING for too long
+     * Marks them as FAILED if they've been in CREATING for too long.
      *
      * @param int $ageMinutes Minimum age in minutes to consider a lot as orphaned (default: 5)
+     *
      * @return array Statistics about processed orphaned lots
      */
     public function processOrphanedCreatingLots(int $ageMinutes = 5): array
@@ -207,7 +208,7 @@ class BpMessageEmailModel
         $orphanedLots = $qb->getQuery()->getResult();
 
         $stats = [
-            'processed' => 0,
+            'processed'     => 0,
             'marked_failed' => 0,
         ];
 
@@ -215,8 +216,8 @@ class BpMessageEmailModel
             ++$stats['processed'];
 
             $this->logger->warning('BpMessage Email: Found orphaned CREATING lot', [
-                'lot_id' => $lot->getId(),
-                'created_at' => $lot->getCreatedAt()->format('Y-m-d H:i:s'),
+                'lot_id'      => $lot->getId(),
+                'created_at'  => $lot->getCreatedAt()->format('Y-m-d H:i:s'),
                 'minutes_old' => (new \DateTime())->diff($lot->getCreatedAt())->i,
             ]);
 
@@ -244,9 +245,7 @@ class BpMessageEmailModel
     }
 
     /**
-     * Get API Base URL from integration
-     *
-     * @return string|null
+     * Get API Base URL from integration.
      */
     private function getApiBaseUrl(): ?string
     {
@@ -255,6 +254,7 @@ class BpMessageEmailModel
 
         if (!$integration) {
             $this->logger->warning('BpMessage Email: Integration not found');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -262,6 +262,7 @@ class BpMessageEmailModel
 
         if (!$settings || !$settings->getIsPublished()) {
             $this->logger->warning('BpMessage Email: Integration not published');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -269,6 +270,7 @@ class BpMessageEmailModel
 
         if (!$apiUrl) {
             $this->logger->warning('BpMessage Email: API URL not configured, using default');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -276,9 +278,7 @@ class BpMessageEmailModel
     }
 
     /**
-     * Get default batch size from integration
-     *
-     * @return int
+     * Get default batch size from integration.
      */
     private function getDefaultBatchSize(): int
     {
@@ -299,9 +299,7 @@ class BpMessageEmailModel
     }
 
     /**
-     * Get default time window from integration
-     *
-     * @return int
+     * Get default time window from integration.
      */
     private function getDefaultTimeWindow(): int
     {

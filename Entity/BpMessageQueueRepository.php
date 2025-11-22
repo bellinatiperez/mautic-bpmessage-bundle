@@ -7,15 +7,13 @@ namespace MauticPlugin\MauticBpMessageBundle\Entity;
 use Doctrine\ORM\EntityRepository;
 
 /**
- * Repository for BpMessageQueue entity
+ * Repository for BpMessageQueue entity.
  */
 class BpMessageQueueRepository extends EntityRepository
 {
     /**
-     * Find pending messages for a lot
+     * Find pending messages for a lot.
      *
-     * @param int $lotId
-     * @param int|null $limit
      * @return BpMessageQueue[]
      */
     public function findPendingForLot(int $lotId, ?int $limit = null): array
@@ -35,10 +33,8 @@ class BpMessageQueueRepository extends EntityRepository
     }
 
     /**
-     * Find failed messages that can be retried
+     * Find failed messages that can be retried.
      *
-     * @param int $maxRetries
-     * @param int|null $limit
      * @return BpMessageQueue[]
      */
     public function findFailedForRetry(int $maxRetries = 3, ?int $limit = null): array
@@ -58,11 +54,7 @@ class BpMessageQueueRepository extends EntityRepository
     }
 
     /**
-     * Count messages by status for a lot
-     *
-     * @param int $lotId
-     * @param string $status
-     * @return int
+     * Count messages by status for a lot.
      */
     public function countByStatus(int $lotId, string $status): int
     {
@@ -77,9 +69,8 @@ class BpMessageQueueRepository extends EntityRepository
     }
 
     /**
-     * Get all messages for a lot
+     * Get all messages for a lot.
      *
-     * @param int $lotId
      * @return BpMessageQueue[]
      */
     public function findAllForLot(int $lotId): array
@@ -93,9 +84,8 @@ class BpMessageQueueRepository extends EntityRepository
     }
 
     /**
-     * Delete messages for old lots
+     * Delete messages for old lots.
      *
-     * @param int $days
      * @return int Number of deleted messages
      */
     public function deleteOldMessages(int $days = 30): int
@@ -114,10 +104,7 @@ class BpMessageQueueRepository extends EntityRepository
     }
 
     /**
-     * Mark multiple messages as sent
-     *
-     * @param array $ids
-     * @return int
+     * Mark multiple messages as sent.
      */
     public function markAsSent(array $ids): int
     {
@@ -140,10 +127,7 @@ class BpMessageQueueRepository extends EntityRepository
     }
 
     /**
-     * Reset failed messages to pending for retry
-     *
-     * @param array $ids
-     * @return int
+     * Reset failed messages to pending for retry.
      */
     public function resetToPending(array $ids): int
     {
@@ -162,11 +146,7 @@ class BpMessageQueueRepository extends EntityRepository
     }
 
     /**
-     * Check if a lead is already queued for a lot
-     *
-     * @param int $lotId
-     * @param int $leadId
-     * @return bool
+     * Check if a lead is already queued for a lot.
      */
     public function isLeadQueued(int $lotId, int $leadId): bool
     {

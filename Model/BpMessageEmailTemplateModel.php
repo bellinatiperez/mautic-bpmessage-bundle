@@ -15,7 +15,7 @@ use MauticPlugin\MauticBpMessageBundle\Service\EmailTemplateMessageMapper;
 use Psr\Log\LoggerInterface;
 
 /**
- * Model for BpMessage email template operations
+ * Model for BpMessage email template operations.
  */
 class BpMessageEmailTemplateModel
 {
@@ -30,21 +30,20 @@ class BpMessageEmailTemplateModel
         EmailTemplateMessageMapper $messageMapper,
         EntityManager $entityManager,
         LoggerInterface $logger,
-        IntegrationHelper $integrationHelper
+        IntegrationHelper $integrationHelper,
     ) {
-        $this->lotManager = $lotManager;
-        $this->messageMapper = $messageMapper;
-        $this->em = $entityManager;
-        $this->logger = $logger;
+        $this->lotManager        = $lotManager;
+        $this->messageMapper     = $messageMapper;
+        $this->em                = $entityManager;
+        $this->logger            = $logger;
         $this->integrationHelper = $integrationHelper;
     }
 
     /**
-     * Send an email using a template for a lead (called from campaign action)
+     * Send an email using a template for a lead (called from campaign action).
      *
-     * @param Lead $lead
      * @param array $config Campaign action configuration
-     * @param Campaign $campaign
+     *
      * @return array ['success' => bool, 'message' => string]
      */
     public function sendEmailFromTemplate(Lead $lead, array $config, Campaign $campaign): array
@@ -60,8 +59,8 @@ class BpMessageEmailTemplateModel
             }
 
             // Add integration settings to config
-            $config['api_base_url'] = $apiBaseUrl;
-            $config['default_batch_size'] = $this->getDefaultBatchSize();
+            $config['api_base_url']        = $apiBaseUrl;
+            $config['default_batch_size']  = $this->getDefaultBatchSize();
             $config['default_time_window'] = $this->getDefaultTimeWindow();
 
             // Validate lead
@@ -70,7 +69,7 @@ class BpMessageEmailTemplateModel
                 $errorMsg = implode('; ', $validation['errors']);
                 $this->logger->warning('BpMessage Email Template: Lead validation failed', [
                     'lead_id' => $lead->getId(),
-                    'errors' => $errorMsg,
+                    'errors'  => $errorMsg,
                 ]);
 
                 return [
@@ -94,8 +93,8 @@ class BpMessageEmailTemplateModel
             $this->lotManager->queueEmail($lot, $lead, $emailData);
 
             $this->logger->info('BpMessage Email Template: Email queued successfully', [
-                'lead_id' => $lead->getId(),
-                'lot_id' => $lot->getId(),
+                'lead_id'     => $lead->getId(),
+                'lot_id'      => $lot->getId(),
                 'campaign_id' => $campaign->getId(),
                 'template_id' => is_array($config['email_template']) ? reset($config['email_template']) : $config['email_template'],
             ]);
@@ -111,9 +110,9 @@ class BpMessageEmailTemplateModel
         } catch (\Exception $e) {
             // Lead-specific errors are caught and returned as failure
             $this->logger->error('BpMessage Email Template: Failed to send email', [
-                'lead_id' => $lead->getId(),
+                'lead_id'     => $lead->getId(),
                 'campaign_id' => $campaign->getId(),
-                'error' => $e->getMessage(),
+                'error'       => $e->getMessage(),
             ]);
 
             return [
@@ -124,9 +123,7 @@ class BpMessageEmailTemplateModel
     }
 
     /**
-     * Get API Base URL from integration
-     *
-     * @return string|null
+     * Get API Base URL from integration.
      */
     private function getApiBaseUrl(): ?string
     {
@@ -135,6 +132,7 @@ class BpMessageEmailTemplateModel
 
         if (!$integration) {
             $this->logger->warning('BpMessage Email Template: Integration not found');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -142,6 +140,7 @@ class BpMessageEmailTemplateModel
 
         if (!$settings || !$settings->getIsPublished()) {
             $this->logger->warning('BpMessage Email Template: Integration not published');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -149,6 +148,7 @@ class BpMessageEmailTemplateModel
 
         if (!$apiUrl) {
             $this->logger->warning('BpMessage Email Template: API URL not configured, using default');
+
             return 'https://api.bpmessage.com.br'; // Fallback
         }
 
@@ -156,9 +156,7 @@ class BpMessageEmailTemplateModel
     }
 
     /**
-     * Get default batch size from integration
-     *
-     * @return int
+     * Get default batch size from integration.
      */
     private function getDefaultBatchSize(): int
     {
@@ -179,9 +177,7 @@ class BpMessageEmailTemplateModel
     }
 
     /**
-     * Get default time window from integration
-     *
-     * @return int
+     * Get default time window from integration.
      */
     private function getDefaultTimeWindow(): int
     {

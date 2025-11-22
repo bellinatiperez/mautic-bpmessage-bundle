@@ -9,28 +9,33 @@ use Mautic\CoreBundle\Doctrine\Mapping\ClassMetadataBuilder;
 use Mautic\LeadBundle\Entity\Lead;
 
 /**
- * Entity representing a message in the queue to be sent
+ * Entity representing a message in the queue to be sent.
  *
  * @ORM\Entity
+ *
  * @ORM\Table(name="bpmessage_queue")
  */
 class BpMessageQueue
 {
     /**
      * @ORM\Id
+     *
      * @ORM\GeneratedValue(strategy="AUTO")
+     *
      * @ORM\Column(type="integer")
      */
     private ?int $id = null;
 
     /**
      * @ORM\ManyToOne(targetEntity="BpMessageLot", inversedBy="queueItems")
+     *
      * @ORM\JoinColumn(name="lot_id", referencedColumnName="id", onDelete="CASCADE", nullable=false)
      */
     private ?BpMessageLot $lot = null;
 
     /**
      * @ORM\ManyToOne(targetEntity="Mautic\LeadBundle\Entity\Lead")
+     *
      * @ORM\JoinColumn(name="lead_id", referencedColumnName="id", onDelete="CASCADE", nullable=false)
      */
     private ?Lead $lead = null;
@@ -113,6 +118,7 @@ class BpMessageQueue
     public function setLot(?BpMessageLot $lot): self
     {
         $this->lot = $lot;
+
         return $this;
     }
 
@@ -124,6 +130,7 @@ class BpMessageQueue
     public function setLead(?Lead $lead): self
     {
         $this->lead = $lead;
+
         return $this;
     }
 
@@ -135,6 +142,7 @@ class BpMessageQueue
     public function setPayloadJson(string $payloadJson): self
     {
         $this->payloadJson = $payloadJson;
+
         return $this;
     }
 
@@ -146,6 +154,7 @@ class BpMessageQueue
     public function setPayloadArray(array $payload): self
     {
         $this->payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         return $this;
     }
 
@@ -157,6 +166,7 @@ class BpMessageQueue
     public function setStatus(string $status): self
     {
         $this->status = $status;
+
         return $this;
     }
 
@@ -168,12 +178,14 @@ class BpMessageQueue
     public function setRetryCount(int $retryCount): self
     {
         $this->retryCount = $retryCount;
+
         return $this;
     }
 
     public function incrementRetryCount(): self
     {
         ++$this->retryCount;
+
         return $this;
     }
 
@@ -185,6 +197,7 @@ class BpMessageQueue
     public function setErrorMessage(?string $errorMessage): self
     {
         $this->errorMessage = $errorMessage;
+
         return $this;
     }
 
@@ -196,6 +209,7 @@ class BpMessageQueue
     public function setCreatedAt(\DateTime $createdAt): self
     {
         $this->createdAt = $createdAt;
+
         return $this;
     }
 
@@ -207,6 +221,7 @@ class BpMessageQueue
     public function setSentAt(?\DateTime $sentAt): self
     {
         $this->sentAt = $sentAt;
+
         return $this;
     }
 
@@ -229,14 +244,16 @@ class BpMessageQueue
     {
         $this->status = 'SENT';
         $this->sentAt = new \DateTime();
+
         return $this;
     }
 
     public function markAsFailed(string $errorMessage): self
     {
-        $this->status = 'FAILED';
+        $this->status       = 'FAILED';
         $this->errorMessage = $errorMessage;
         $this->incrementRetryCount();
+
         return $this;
     }
 }

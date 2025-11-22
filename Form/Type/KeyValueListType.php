@@ -15,7 +15,7 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
  * Custom list type that uses label as key (not value)
- * This allows duplicate values which is needed for date fields
+ * This allows duplicate values which is needed for date fields.
  */
 class KeyValueListType extends AbstractType
 {
@@ -26,14 +26,14 @@ class KeyValueListType extends AbstractType
                 'list',
                 CollectionType::class,
                 [
-                    'label' => false,
-                    'entry_type' => SortableValueLabelListType::class,
+                    'label'         => false,
+                    'entry_type'    => SortableValueLabelListType::class,
                     'entry_options' => [
-                        'label' => false,
+                        'label'    => false,
                         'required' => false,
-                        'attr' => [
-                            'class' => 'form-control',
-                            'preaddon' => 'ri-close-line',
+                        'attr'     => [
+                            'class'         => 'form-control',
+                            'preaddon'      => 'ri-close-line',
                             'preaddon_attr' => [
                                 'onclick' => 'Mautic.removeFormListOption(this);',
                             ],
@@ -41,9 +41,9 @@ class KeyValueListType extends AbstractType
                         ],
                         'error_bubbling' => true,
                     ],
-                    'allow_add' => true,
-                    'allow_delete' => true,
-                    'prototype' => true,
+                    'allow_add'      => true,
+                    'allow_delete'   => true,
+                    'prototype'      => true,
                     'error_bubbling' => false,
                 ]
             )
@@ -52,7 +52,7 @@ class KeyValueListType extends AbstractType
 
     public function buildView(FormView $view, FormInterface $form, array $options): void
     {
-        $view->vars['isSortable'] = true;
+        $view->vars['isSortable']     = true;
         $view->vars['addValueButton'] = 'mautic.core.form.list.additem';
     }
 

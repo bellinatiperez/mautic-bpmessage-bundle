@@ -114,13 +114,14 @@ abstract class AbstractMigration implements MigrationInterface
     }
 
     /**
-     * Check if a table has a specific column
+     * Check if a table has a specific column.
      */
     protected function hasColumn(string $tableName, string $columnName): bool
     {
         try {
             $schema = $this->entityManager->getConnection()->createSchemaManager()->introspectSchema();
-            $table = $schema->getTable($tableName);
+            $table  = $schema->getTable($tableName);
+
             return $table->hasColumn($columnName);
         } catch (\Exception $e) {
             return false;

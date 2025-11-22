@@ -25,8 +25,7 @@ class CreateTestTemplateCommand extends Command
     {
         $this
             ->setName('mautic:bpmessage:create-test-template')
-            ->setDescription('Create a test email template for BpMessage testing')
-        ;
+            ->setDescription('Create a test email template for BpMessage testing');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -48,7 +47,7 @@ class CreateTestTemplateCommand extends Command
         $this->em->persist($email);
         $this->em->flush();
 
-        $io->success("Template created successfully!");
+        $io->success('Template created successfully!');
         $io->table(
             ['ID', 'Name', 'Subject', 'Type'],
             [
@@ -57,7 +56,7 @@ class CreateTestTemplateCommand extends Command
                     $email->getName(),
                     $email->getSubject(),
                     $email->getEmailType(),
-                ]
+                ],
             ]
         );
 

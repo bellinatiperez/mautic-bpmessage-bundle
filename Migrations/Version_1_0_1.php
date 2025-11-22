@@ -9,7 +9,7 @@ use MauticPlugin\MauticBpMessageBundle\Migration\AbstractMigration;
 
 /**
  * Add priority column to bpmessage_lot table
- * Example migration to demonstrate the system
+ * Example migration to demonstrate the system.
  */
 class Version_1_0_1 extends AbstractMigration
 {

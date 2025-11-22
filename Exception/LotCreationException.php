@@ -20,9 +20,7 @@ class LotCreationException extends \RuntimeException
     }
 
     /**
-     * Get the local lot ID (if available)
-     *
-     * @return int|null
+     * Get the local lot ID (if available).
      */
     public function getLotId(): ?int
     {
@@ -30,9 +28,7 @@ class LotCreationException extends \RuntimeException
     }
 
     /**
-     * Check if this is a configuration error (vs a transient API error)
-     *
-     * @return bool
+     * Check if this is a configuration error (vs a transient API error).
      */
     public function isConfigurationError(): bool
     {
@@ -46,7 +42,7 @@ class LotCreationException extends \RuntimeException
         ];
 
         foreach ($configKeywords as $keyword) {
-            if (stripos($this->getMessage(), $keyword) !== false) {
+            if (false !== stripos($this->getMessage(), $keyword)) {
                 return true;
             }
         }

@@ -7,15 +7,12 @@ namespace MauticPlugin\MauticBpMessageBundle\Entity;
 use Doctrine\ORM\EntityRepository;
 
 /**
- * Repository for BpMessageLot entity
+ * Repository for BpMessageLot entity.
  */
 class BpMessageLotRepository extends EntityRepository
 {
     /**
-     * Find an open lot for a campaign
-     *
-     * @param int $campaignId
-     * @return BpMessageLot|null
+     * Find an open lot for a campaign.
      */
     public function findOpenLotForCampaign(int $campaignId): ?BpMessageLot
     {
@@ -31,7 +28,7 @@ class BpMessageLotRepository extends EntityRepository
     }
 
     /**
-     * Find all open lots that should be closed (time window expired or batch size reached)
+     * Find all open lots that should be closed (time window expired or batch size reached).
      *
      * @return BpMessageLot[]
      */
@@ -51,9 +48,8 @@ class BpMessageLotRepository extends EntityRepository
     }
 
     /**
-     * Find lots that are stuck in CREATING status for too long
+     * Find lots that are stuck in CREATING status for too long.
      *
-     * @param int $minutes
      * @return BpMessageLot[]
      */
     public function findStuckCreatingLots(int $minutes = 30): array
@@ -71,7 +67,7 @@ class BpMessageLotRepository extends EntityRepository
     }
 
     /**
-     * Find lots with SENDING status
+     * Find lots with SENDING status.
      *
      * @return BpMessageLot[]
      */
@@ -86,15 +82,12 @@ class BpMessageLotRepository extends EntityRepository
     }
 
     /**
-     * Count messages by status for a lot
-     *
-     * @param int $lotId
-     * @return array
+     * Count messages by status for a lot.
      */
     public function getMessageCountsByStatus(int $lotId): array
     {
         $conn = $this->getEntityManager()->getConnection();
-        $sql = 'SELECT status, COUNT(*) as count
+        $sql  = 'SELECT status, COUNT(*) as count
                 FROM bpmessage_queue
                 WHERE lot_id = :lotId
                 GROUP BY status';
@@ -105,8 +98,8 @@ class BpMessageLotRepository extends EntityRepository
 
         $counts = [
             'PENDING' => 0,
-            'SENT' => 0,
-            'FAILED' => 0,
+            'SENT'    => 0,
+            'FAILED'  => 0,
         ];
 
         foreach ($results as $row) {
@@ -117,10 +110,7 @@ class BpMessageLotRepository extends EntityRepository
     }
 
     /**
-     * Get statistics for a campaign
-     *
-     * @param int $campaignId
-     * @return array
+     * Get statistics for a campaign.
      */
     public function getCampaignStats(int $campaignId): array
     {
@@ -134,9 +124,8 @@ class BpMessageLotRepository extends EntityRepository
     }
 
     /**
-     * Delete old finished lots
+     * Delete old finished lots.
      *
-     * @param int $days
      * @return int Number of deleted lots
      */
     public function deleteOldFinishedLots(int $days = 30): int
@@ -155,10 +144,7 @@ class BpMessageLotRepository extends EntityRepository
     }
 
     /**
-     * Find lot by external lot ID
-     *
-     * @param string $externalLotId
-     * @return BpMessageLot|null
+     * Find lot by external lot ID.
      */
     public function findByExternalLotId(string $externalLotId): ?BpMessageLot
     {
