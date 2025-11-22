@@ -245,6 +245,54 @@ class BpMessageEmailModel
     }
 
     /**
+     * Force close a specific email lot by ID.
+     *
+     * @param int $lotId The lot ID to process
+     *
+     * @return bool True if lot was processed successfully, false otherwise
+     */
+    public function forceCloseLot(int $lotId): bool
+    {
+        $lot = $this->em->getRepository(BpMessageLot::class)->find($lotId);
+
+        if (null === $lot) {
+            $this->logger->error('BpMessage Email: Lot not found', ['lot_id' => $lotId]);
+
+            return false;
+        }
+
+        // Verify this is an email lot
+        if (!$lot->isEmailLot()) {
+            $this->logger->error('BpMessage Email: Lot is not an email lot', [
+                'lot_id'           => $lotId,
+                'idQuotaSettings'  => $lot->getIdQuotaSettings(),
+            ]);
+
+            return false;
+        }
+
+        if (!$lot->isOpen()) {
+            $this->logger->warning('BpMessage Email: Lot is not open', [
+                'lot_id' => $lotId,
+                'status' => $lot->getStatus(),
+            ]);
+
+            return false;
+        }
+
+        try {
+            return $this->lotManager->processLot($lot);
+        } catch (\Exception $e) {
+            $this->logger->error('BpMessage Email: Failed to force close lot', [
+                'lot_id' => $lotId,
+                'error'  => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
      * Get API Base URL from integration.
      */
     private function getApiBaseUrl(): ?string

@@ -103,7 +103,22 @@ EOT
         $output->writeln("Processing lot #{$lotId}");
 
         try {
-            $success = $this->bpMessageModel->forceCloseLot($lotId);
+            // First, check if the lot exists and determine its type
+            $lot = $this->bpMessageModel->getLotById($lotId);
+
+            if (null === $lot) {
+                $output->writeln("Error: Lot #{$lotId} not found");
+                return Command::FAILURE;
+            }
+
+            // Route to the appropriate model based on lot type
+            if ($lot->isEmailLot()) {
+                $output->writeln("Lot #{$lotId} is an EMAIL lot (idQuotaSettings = 0)");
+                $success = $this->bpMessageEmailModel->forceCloseLot($lotId);
+            } else {
+                $output->writeln("Lot #{$lotId} is a MESSAGE lot (idQuotaSettings = {$lot->getIdQuotaSettings()})");
+                $success = $this->bpMessageModel->forceCloseLot($lotId);
+            }
 
             if ($success) {
                 $output->writeln("Lot #{$lotId} processed successfully");

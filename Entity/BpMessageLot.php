@@ -510,4 +510,13 @@ class BpMessageLot
     {
         return 'FAILED' === $this->status;
     }
+
+    /**
+     * Check if this is an email lot (idQuotaSettings = 0).
+     * Email lots use idQuotaSettings = 0, while message lots (SMS/WhatsApp/RCS) use idQuotaSettings > 0.
+     */
+    public function isEmailLot(): bool
+    {
+        return 0 === $this->idQuotaSettings;
+    }
 }
