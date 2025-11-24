@@ -133,6 +133,11 @@ class BpMessageLot
     private ?string $errorMessage = null;
 
     /**
+     * @ORM\Column(name="create_lot_payload", type="json", nullable=true)
+     */
+    private ?array $createLotPayload = null;
+
+    /**
      * @ORM\OneToMany(targetEntity="BpMessageQueue", mappedBy="lot", cascade={"persist", "remove"}, orphanRemoval=true)
      */
     private Collection $queueItems;
@@ -170,6 +175,7 @@ class BpMessageLot
         $builder->addNamedField('batchSize', 'integer', 'batch_size');
         $builder->addNamedField('timeWindow', 'integer', 'time_window');
         $builder->addNamedField('errorMessage', 'text', 'error_message', ['nullable' => true]);
+        $builder->addNamedField('createLotPayload', 'json', 'create_lot_payload', ['nullable' => true]);
 
         $builder->addIndex(['status'], 'idx_status');
         $builder->addIndex(['created_at'], 'idx_created_at');
@@ -442,6 +448,30 @@ class BpMessageLot
         return $this;
     }
 
+    /**
+     * Get create lot payload.
+     * Doctrine automatically converts JSON to array.
+     *
+     * @return array|null
+     */
+    public function getCreateLotPayload(): ?array
+    {
+        return $this->createLotPayload;
+    }
+
+    /**
+     * Set create lot payload.
+     * Doctrine automatically converts array to JSON.
+     *
+     * @param array|null $createLotPayload
+     */
+    public function setCreateLotPayload(?array $createLotPayload): self
+    {
+        $this->createLotPayload = $createLotPayload;
+
+        return $this;
+    }
+
     public function getQueueItems(): Collection
     {
         return $this->queueItems;
@@ -473,7 +503,8 @@ class BpMessageLot
      */
     public function shouldCloseByTime(): bool
     {
-        $now     = new \DateTime();
+        // Use default PHP timezone - Doctrine handles UTC conversion automatically
+        $now     = new \DateTime('now');
         $elapsed = $now->getTimestamp() - $this->createdAt->getTimestamp();
 
         return $elapsed >= $this->timeWindow;
@@ -485,6 +516,20 @@ class BpMessageLot
     public function shouldCloseByCount(): bool
     {
         return $this->messagesCount >= $this->batchSize;
+    }
+
+    /**
+     * Check if lot is expired based on endDate.
+     * This check has PRIORITY over shouldCloseByTime() and shouldCloseByCount().
+     *
+     * @return bool True if endDate is in the past
+     */
+    public function isExpiredByEndDate(): bool
+    {
+        // Use default PHP timezone - Doctrine handles UTC conversion automatically
+        $now = new \DateTime('now');
+
+        return $this->endDate < $now;
     }
 
     /**

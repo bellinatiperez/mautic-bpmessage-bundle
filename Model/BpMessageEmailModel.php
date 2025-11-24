@@ -141,9 +141,9 @@ class BpMessageEmailModel
             // Force close ALL open lots
             $lotsToClose = $lots;
         } else {
-            // Only close lots that meet time/count criteria
+            // Only close lots that meet criteria - endDate expiration has PRIORITY
             $lotsToClose = array_filter($lots, function (BpMessageLot $lot) {
-                return $lot->shouldCloseByTime() || $lot->shouldCloseByCount();
+                return $lot->isExpiredByEndDate() || $lot->shouldCloseByTime() || $lot->shouldCloseByCount();
             });
         }
 

@@ -58,7 +58,8 @@ class EmailLotManager
 
         $lot = $qb->getQuery()->getOneOrNullResult();
 
-        if (null !== $lot && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
+        // Check if lot can be reused - endDate expiration has PRIORITY
+        if (null !== $lot && !$lot->isExpiredByEndDate() && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
             $this->logger->info('BpMessage Email: Using existing OPEN lot', [
                 'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
@@ -66,6 +67,25 @@ class EmailLotManager
             ]);
 
             return $lot;
+        }
+
+        // Log if lot was found but cannot be reused
+        if (null !== $lot) {
+            $reasons = [];
+            if ($lot->isExpiredByEndDate()) {
+                $reasons[] = 'endDate expired';
+            }
+            if ($lot->shouldCloseByCount()) {
+                $reasons[] = 'batch size reached';
+            }
+            if ($lot->shouldCloseByTime()) {
+                $reasons[] = 'time window expired';
+            }
+
+            $this->logger->info('BpMessage Email: Cannot reuse lot, creating new one', [
+                'lot_id'  => $lot->getId(),
+                'reasons' => implode(', ', $reasons),
+            ]);
         }
 
         // Check if there's a recent CREATING lot (within last 60 seconds) to prevent duplicates
@@ -119,9 +139,13 @@ class EmailLotManager
         $lot = new BpMessageLot();
         $lot->setName($config['lot_name'] ?? "Email Campaign {$campaign->getName()}");
 
-        // Calculate startDate and endDate
-        $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300); // seconds
-        $now        = new \DateTime('now');
+        // Calculate startDate and endDate in Brazil timezone
+        // Using America/Sao_Paulo (Brazil) - hardcoded as this is for Brazilian market
+        $timeWindow      = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300); // seconds
+        $localTimezone   = new \DateTimeZone('America/Sao_Paulo');
+
+        // Create dates in local timezone - Doctrine will convert to UTC when saving
+        $now = new \DateTime('now', $localTimezone);
 
         // Check if lot_data has custom startDate/endDate
         $startDate = $now;
@@ -177,17 +201,25 @@ class EmailLotManager
         // Call BpMessage API to create email lot
         $this->client->setBaseUrl($config['api_base_url']);
 
-        // Format dates as ISO 8601 with milliseconds and Z timezone (UTC)
-        // Example: 2025-02-06T13:53:16.049Z
-        $startDateUTC = clone $lot->getStartDate();
-        $startDateUTC->setTimezone(new \DateTimeZone('UTC'));
-        $endDateUTC = clone $lot->getEndDate();
-        $endDateUTC->setTimezone(new \DateTimeZone('UTC'));
+        // Send dates in local timezone as ISO 8601 with milliseconds
+        // BpMessage API expects local time (not UTC)
+        // Force conversion to local timezone (Doctrine stores in UTC)
+        // Using America/Sao_Paulo (Brazil) - hardcoded as this is for Brazilian market
+        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
+
+        $startDate = clone $lot->getStartDate();
+        $startDate->setTimezone($localTimezone);
+
+        $endDate = clone $lot->getEndDate();
+        $endDate->setTimezone($localTimezone);
+
+        $startDateFormatted = $startDate->format('Y-m-d\TH:i:s.vP');
+        $endDateFormatted = $endDate->format('Y-m-d\TH:i:s.vP');
 
         $lotData = [
             'name'              => $lot->getName(),
-            'startDate'         => $startDateUTC->format('Y-m-d\TH:i:s.v\Z'),
-            'endDate'           => $endDateUTC->format('Y-m-d\TH:i:s.v\Z'),
+            'startDate'         => $startDateFormatted,
+            'endDate'           => $endDateFormatted,
             'user'              => 'system',
             'idServiceSettings' => $lot->getIdServiceSettings(),
         ];
@@ -213,6 +245,11 @@ class EmailLotManager
         if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
             $lotData = array_merge($lotData, $config['lot_data']);
         }
+
+        // Save the complete payload that will be sent to the API
+        // This allows monitoring of values like startDate and endDate
+        $lot->setCreateLotPayload($lotData);
+        $this->entityManager->flush();
 
         try {
             $result = $this->client->createEmailLot($lotData);
