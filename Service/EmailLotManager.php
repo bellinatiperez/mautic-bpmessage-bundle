@@ -454,12 +454,36 @@ class EmailLotManager
             } else {
                 $success = false;
 
-                // Mark emails as failed
-                foreach ($batch as $queue) {
-                    $queue->markAsFailed($result['error']);
-                }
+                // Save error message to lot for user visibility
+                $errorMessage = "Batch {$batchIndex} failed: ".$result['error'];
+                $lot->setErrorMessage($errorMessage);
+                $lot->setStatus('FAILED');
+
+                // Mark emails as failed using bulk update for reliability
+                $queueIds = array_map(function (BpMessageQueue $queue) {
+                    return $queue->getId();
+                }, $batch);
 
                 $this->entityManager->flush();
+
+                // Force update with SQL to ensure persistence (EntityManager flush may not work in all scenarios)
+                $connection = $this->entityManager->getConnection();
+
+                // Update lot status and error message
+                $connection->executeStatement(
+                    'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                    ['FAILED', $errorMessage, $lot->getId()]
+                );
+
+                // Update queue items status and error message
+                if (!empty($queueIds)) {
+                    $placeholders = implode(',', array_fill(0, count($queueIds), '?'));
+                    $params       = array_merge(['FAILED', $result['error']], $queueIds);
+                    $connection->executeStatement(
+                        "UPDATE bpmessage_queue SET status = ?, error_message = ?, retry_count = retry_count + 1 WHERE id IN ({$placeholders})",
+                        $params
+                    );
+                }
 
                 $this->logger->error('BpMessage Email: Batch failed', [
                     'lot_id'      => $lot->getId(),
@@ -552,8 +576,20 @@ class EmailLotManager
 
         if (!$success) {
             $lot->setStatus('FAILED');
-            $lot->setErrorMessage('Failed to send emails');
+
+            // Only set generic error if no specific error was set during sendLotEmails
+            if (!$lot->getErrorMessage()) {
+                $lot->setErrorMessage('Failed to send emails - check individual message errors');
+            }
+
             $this->entityManager->flush();
+
+            // Force update with SQL to ensure persistence (EntityManager flush may not work in all scenarios)
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                ['FAILED', $lot->getErrorMessage(), $lot->getId()]
+            );
 
             return false;
         }

@@ -246,6 +246,73 @@ class BatchController
     }
 
     /**
+     * Cancel/fail a lot manually.
+     */
+    public function cancelAction(Request $request, int $id): Response
+    {
+        $em = $this->doctrine->getManager();
+
+        $lot = $em->getRepository(BpMessageLot::class)->find($id);
+
+        if (!$lot) {
+            if ($request->isXmlHttpRequest()) {
+                return new JsonResponse(['success' => false, 'message' => 'Lot not found'], 404);
+            }
+
+            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', FlashBag::LEVEL_ERROR);
+
+            return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
+        }
+
+        // Only allow canceling lots that are not already FINISHED or FAILED
+        if (!in_array($lot->getStatus(), ['CREATING', 'OPEN', 'SENDING'])) {
+            if ($request->isXmlHttpRequest()) {
+                return new JsonResponse([
+                    'success' => false,
+                    'message' => $this->translator->trans('mautic.bpmessage.lot.error.cannot_cancel'),
+                ], 400);
+            }
+
+            $this->flashBag->add('mautic.bpmessage.lot.error.cannot_cancel', FlashBag::LEVEL_ERROR);
+
+            return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+        }
+
+        // Get reason from request
+        $reason = $request->request->get('reason', 'Manually cancelled by user');
+
+        // Update lot status
+        $lot->setStatus('FAILED');
+        $lot->setErrorMessage('Cancelled: '.$reason);
+        $em->persist($lot);
+        $em->flush();
+
+        // Force update with SQL to ensure persistence
+        $connection = $em->getConnection();
+        $connection->executeStatement(
+            'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+            ['FAILED', 'Cancelled: '.$reason, $lot->getId()]
+        );
+
+        // Mark pending messages as failed
+        $connection->executeStatement(
+            'UPDATE bpmessage_queue SET status = ?, error_message = ? WHERE lot_id = ? AND status = ?',
+            ['FAILED', 'Lot cancelled', $lot->getId(), 'PENDING']
+        );
+
+        if ($request->isXmlHttpRequest()) {
+            return new JsonResponse([
+                'success' => true,
+                'message' => $this->translator->trans('mautic.bpmessage.lot.cancelled'),
+            ]);
+        }
+
+        $this->flashBag->add('mautic.bpmessage.lot.cancelled', FlashBag::LEVEL_SUCCESS);
+
+        return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+    }
+
+    /**
      * Process pending lots manually.
      */
     public function processAction(Request $request): Response

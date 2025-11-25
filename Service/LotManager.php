@@ -426,7 +426,26 @@ class LotManager
     public function sendLotMessages(BpMessageLot $lot): bool
     {
         if (!$lot->isOpen()) {
-            $this->logger->warning('BpMessage: Cannot send messages, lot is not open', [
+            $errorMessage = "Cannot send messages, lot status is '{$lot->getStatus()}' (expected CREATING or OPEN)";
+            $lot->setErrorMessage($errorMessage);
+            $this->entityManager->flush();
+
+            $this->logger->warning('BpMessage: '.$errorMessage, [
+                'lot_id' => $lot->getId(),
+                'status' => $lot->getStatus(),
+            ]);
+
+            return false;
+        }
+
+        // Verify lot has external ID (created in BpMessage API)
+        if (empty($lot->getExternalLotId())) {
+            $errorMessage = 'Lot has no external ID - API lot creation may have failed';
+            $lot->setErrorMessage($errorMessage);
+            $lot->setStatus('FAILED');
+            $this->entityManager->flush();
+
+            $this->logger->error('BpMessage: '.$errorMessage, [
                 'lot_id' => $lot->getId(),
                 'status' => $lot->getStatus(),
             ]);
@@ -514,12 +533,31 @@ class LotManager
                 $lot->setErrorMessage($errorMessage);
                 $lot->setStatus('FAILED');
 
-                // Mark messages as failed
-                foreach ($batch as $queue) {
-                    $queue->markAsFailed($result['error']);
-                }
+                // Mark messages as failed using bulk update for reliability
+                $queueIds = array_map(function (BpMessageQueue $queue) {
+                    return $queue->getId();
+                }, $batch);
 
                 $this->entityManager->flush();
+
+                // Force update with SQL to ensure persistence (EntityManager flush may not work in all scenarios)
+                $connection = $this->entityManager->getConnection();
+
+                // Update lot status and error message
+                $connection->executeStatement(
+                    'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                    ['FAILED', $errorMessage, $lot->getId()]
+                );
+
+                // Update queue items status and error message
+                if (!empty($queueIds)) {
+                    $placeholders = implode(',', array_fill(0, count($queueIds), '?'));
+                    $params       = array_merge(['FAILED', $result['error']], $queueIds);
+                    $connection->executeStatement(
+                        "UPDATE bpmessage_queue SET status = ?, error_message = ?, retry_count = retry_count + 1 WHERE id IN ({$placeholders})",
+                        $params
+                    );
+                }
 
                 $this->logger->error('BpMessage: Batch failed', [
                     'lot_id'      => $lot->getId(),
@@ -619,6 +657,13 @@ class LotManager
             }
 
             $this->entityManager->flush();
+
+            // Force update with SQL to ensure persistence (EntityManager flush may not work in all scenarios)
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                ['FAILED', $lot->getErrorMessage(), $lot->getId()]
+            );
 
             return false;
         }

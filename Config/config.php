@@ -25,6 +25,11 @@ return [
                 'controller'   => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::reprocessAction',
                 'requirements' => ['id' => '\\d+'],
             ],
+            'mautic_bpmessage_lot_cancel' => [
+                'path'         => '/bpmessage/lot/{id}/cancel',
+                'controller'   => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::cancelAction',
+                'requirements' => ['id' => '\\d+'],
+            ],
             'mautic_bpmessage_lot_process' => [
                 'path'       => '/bpmessage/lots/process',
                 'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::processAction',

@@ -175,6 +175,19 @@ class BpMessageModel
             } catch (\Exception $e) {
                 ++$stats['failed'];
 
+                // Save error message to lot for user visibility
+                $errorMessage = 'Exception: '.$e->getMessage();
+                $lot->setErrorMessage($errorMessage);
+                $lot->setStatus('FAILED');
+                $this->em->flush();
+
+                // Force update with SQL to ensure persistence (EntityManager flush may not work in all scenarios)
+                $connection = $this->em->getConnection();
+                $connection->executeStatement(
+                    'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                    ['FAILED', $errorMessage, $lot->getId()]
+                );
+
                 $this->logger->error('BpMessage: Failed to process lot', [
                     'lot_id' => $lot->getId(),
                     'error'  => $e->getMessage(),

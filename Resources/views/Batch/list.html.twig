@@ -30,6 +30,7 @@
                             <th class="col-lot-external-id">{{ 'mautic.bpmessage.lot.external_id'|trans }}</th>
                             <th class="col-lot-campaign">{{ 'mautic.campaign.campaign'|trans }}</th>
                             <th class="col-lot-status">{{ 'mautic.core.status'|trans }}</th>
+                            <th class="col-lot-error">{{ 'mautic.core.error'|trans }}</th>
                             <th class="col-lot-messages">{{ 'mautic.bpmessage.messages'|trans }}</th>
                             <th class="col-lot-created">{{ 'mautic.core.date.added'|trans }}</th>
                             <th class="col-lot-actions">{{ 'mautic.core.actions'|trans }}</th>
@@ -71,13 +72,21 @@
                                     {% elseif lot.status == 'FAILED' or lot.status == 'FAILED_CREATION' %}
                                         <span class="label label-danger">{{ 'mautic.bpmessage.lot.status.failed'|trans }}</span>
                                     {% endif %}
-
-                                    {# Show error icon if there's an error message #}
+                                </td>
+                                <td>
+                                    {# Show error message in dedicated column for better visibility #}
                                     {% if lot.errorMessage %}
-                                        <i class="fa fa-exclamation-triangle text-danger"
-                                           data-toggle="tooltip"
-                                           title="{{ lot.errorMessage }}"
-                                           style="cursor: help; margin-left: 5px;"></i>
+                                        <div class="text-danger">
+                                            <i class="fa fa-exclamation-triangle"></i>
+                                            <small>{{ lot.errorMessage|slice(0, 100) }}{% if lot.errorMessage|length > 100 %}...{% endif %}</small>
+                                        </div>
+                                    {% elseif stats.failed > 0 %}
+                                        <div class="text-warning">
+                                            <i class="fa fa-warning"></i>
+                                            <small>{{ stats.failed }} message(s) failed</small>
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
                                     {% endif %}
                                 </td>
                                 <td>

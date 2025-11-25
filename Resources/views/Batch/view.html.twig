@@ -19,11 +19,44 @@
                 <i class="fa fa-refresh"></i> {{ 'mautic.bpmessage.lot.reprocess'|trans }}
             </a>
         {% endif %}
+        {% if lot.status in ['CREATING', 'OPEN', 'SENDING'] %}
+            <a href="{{ path('mautic_bpmessage_lot_cancel', {'id': lot.id}) }}"
+               class="btn btn-danger btn-sm"
+               data-toggle="ajax"
+               data-method="POST"
+               onclick="return confirm('{{ 'mautic.bpmessage.lot.cancel.confirm'|trans }}');">
+                <i class="fa fa-times"></i> {{ 'mautic.bpmessage.lot.cancel'|trans }}
+            </a>
+        {% endif %}
     </div>
 {% endblock %}
 
 {% block content %}
 <div class="pa-md">
+    {# Error Alert - Show prominently if lot has error #}
+    {% if lot.errorMessage %}
+        <div class="alert alert-danger">
+            <h4><i class="fa fa-exclamation-triangle"></i> {{ 'mautic.core.error'|trans }}</h4>
+            <p><strong>{{ lot.errorMessage }}</strong></p>
+            {% if lot.status in ['FAILED', 'FINISHED'] and statistics.failed > 0 %}
+                <hr>
+                <p>
+                    <a href="{{ path('mautic_bpmessage_lot_reprocess', {'id': lot.id}) }}"
+                       class="btn btn-warning"
+                       data-toggle="ajax"
+                       data-method="POST">
+                        <i class="fa fa-refresh"></i> {{ 'mautic.bpmessage.lot.reprocess'|trans }}
+                    </a>
+                </p>
+            {% endif %}
+        </div>
+    {% elseif statistics.failed > 0 %}
+        <div class="alert alert-warning">
+            <h4><i class="fa fa-warning"></i> {{ 'mautic.core.warning'|trans }}</h4>
+            <p>{{ statistics.failed }} message(s) failed to send. Check the messages table below for details.</p>
+        </div>
+    {% endif %}
+
     {# Lot Information #}
     <div class="panel panel-default">
         <div class="panel-heading">
