@@ -201,7 +201,7 @@ class EmailLotManager
         Lead $lead,
         array $emailData,
         string $status = 'PENDING',
-        ?string $errorMessage = null
+        ?string $errorMessage = null,
     ): BpMessageQueue {
         // Check if lead is already queued
         $qb = $this->entityManager->createQueryBuilder();
@@ -544,13 +544,13 @@ class EmailLotManager
 
         // Update dates to current time since lot creation was deferred
         $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-        $now = new \DateTime('now', $localTimezone);
-        $timeWindow = $lot->getTimeWindow();
-        $endDate = (clone $now)->modify("+{$timeWindow} seconds");
+        $now           = new \DateTime('now', $localTimezone);
+        $timeWindow    = $lot->getTimeWindow();
+        $endDate       = (clone $now)->modify("+{$timeWindow} seconds");
 
         // Update the payload with fresh dates
         $lotData['startDate'] = $now->format('Y-m-d\TH:i:s.vP');
-        $lotData['endDate'] = $endDate->format('Y-m-d\TH:i:s.vP');
+        $lotData['endDate']   = $endDate->format('Y-m-d\TH:i:s.vP');
 
         // Update lot entity dates
         $lot->setStartDate($now);

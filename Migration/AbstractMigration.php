@@ -39,8 +39,23 @@ abstract class AbstractMigration implements MigrationInterface
         $connection = $this->entityManager->getConnection();
 
         foreach ($this->queries as $sql) {
-            $stmt = $connection->prepare($sql);
-            $stmt->executeStatement();
+            try {
+                $stmt = $connection->prepare($sql);
+                $stmt->executeStatement();
+            } catch (\Doctrine\DBAL\Exception $e) {
+                // Ignore race condition errors in multi-pod environments
+                // MySQL error codes:
+                // 1060 = Duplicate column name (column already exists)
+                // 1091 = Can't DROP; check that column/key exists
+                // 1050 = Table already exists
+                // 1061 = Duplicate key name (index already exists)
+                $errorCode = $e->getPrevious() ? $e->getPrevious()->getCode() : null;
+
+                if (!in_array($errorCode, ['42S21', '42000', '42S01', 1060, 1091, 1050, 1061], false)) {
+                    throw $e;
+                }
+                // Silently ignore race condition errors
+            }
         }
     }
 

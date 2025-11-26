@@ -240,7 +240,7 @@ class BatchController
             // This is critical for CREATING lots that need to call BpMessage API again
             // Using America/Sao_Paulo timezone to match LotManager behavior
             $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-            $now = new \DateTime('now', $localTimezone);
+            $now           = new \DateTime('now', $localTimezone);
 
             // Convert lot end date to local timezone for proper comparison
             $lotEndDate = clone $lot->getEndDate();
@@ -249,9 +249,9 @@ class BatchController
             $datesUpdated = false;
             // Always update dates for CREATING lots to ensure they're in the future
             if ($lotEndDate < $now) {
-                $timeWindow = $lot->getTimeWindow(); // in seconds
+                $timeWindow   = $lot->getTimeWindow(); // in seconds
                 $newStartDate = new \DateTime('now', $localTimezone);
-                $newEndDate = (clone $newStartDate)->modify("+{$timeWindow} seconds");
+                $newEndDate   = (clone $newStartDate)->modify("+{$timeWindow} seconds");
 
                 $lot->setStartDate($newStartDate);
                 $lot->setEndDate($newEndDate);
@@ -260,7 +260,7 @@ class BatchController
                 $payload = $lot->getCreateLotPayload();
                 if ($payload) {
                     $payload['startDate'] = $newStartDate->format('Y-m-d\TH:i:s.vP');
-                    $payload['endDate'] = $newEndDate->format('Y-m-d\TH:i:s.vP');
+                    $payload['endDate']   = $newEndDate->format('Y-m-d\TH:i:s.vP');
                     $lot->setCreateLotPayload($payload);
                 }
 
@@ -286,7 +286,7 @@ class BatchController
             $em->flush();
 
             // Force update with SQL to ensure persistence
-            $payload = $lot->getCreateLotPayload();
+            $payload    = $lot->getCreateLotPayload();
             $connection = $em->getConnection();
             $connection->executeStatement(
                 'UPDATE bpmessage_lot SET status = ?, start_date = ?, end_date = ?, create_lot_payload = ?, error_message = NULL, finished_at = NULL WHERE id = ?',
@@ -328,7 +328,6 @@ class BatchController
             }
 
             $this->flashBag->add('mautic.bpmessage.lot.reprocessed', FlashBag::LEVEL_SUCCESS);
-
         } catch (\Exception $e) {
             // Save the error to the lot (no prefix, clean message)
             $errorMessage = $e->getMessage();
@@ -395,16 +394,16 @@ class BatchController
         // This is important for CREATING lots that failed previously and need valid date ranges
         // Using America/Sao_Paulo timezone to match LotManager behavior
         $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-        $now = new \DateTime('now', $localTimezone);
+        $now           = new \DateTime('now', $localTimezone);
 
         // Convert lot end date to local timezone for proper comparison
         $lotEndDate = clone $lot->getEndDate();
         $lotEndDate->setTimezone($localTimezone);
 
         if ($lotEndDate < $now) {
-            $timeWindow = $lot->getTimeWindow(); // in seconds
+            $timeWindow   = $lot->getTimeWindow(); // in seconds
             $newStartDate = new \DateTime('now', $localTimezone);
-            $newEndDate = (clone $newStartDate)->modify("+{$timeWindow} seconds");
+            $newEndDate   = (clone $newStartDate)->modify("+{$timeWindow} seconds");
 
             $lot->setStartDate($newStartDate);
             $lot->setEndDate($newEndDate);
@@ -413,7 +412,7 @@ class BatchController
             $payload = $lot->getCreateLotPayload();
             if ($payload) {
                 $payload['startDate'] = $newStartDate->format('Y-m-d\TH:i:s.vP');
-                $payload['endDate'] = $newEndDate->format('Y-m-d\TH:i:s.vP');
+                $payload['endDate']   = $newEndDate->format('Y-m-d\TH:i:s.vP');
                 $lot->setCreateLotPayload($payload);
             }
 

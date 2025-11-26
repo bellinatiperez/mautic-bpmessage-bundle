@@ -154,7 +154,7 @@ class BpMessageLot
         $builder->setTable('bpmessage_lot');
 
         $builder->addId();
-        $builder->addField('externalLotId', 'string', ['nullable' => true, 'length' => 255]);
+        $builder->addNamedField('externalLotId', 'string', 'external_lot_id', ['nullable' => true, 'length' => 255]);
         $builder->addNamedField('name', 'string', 'name', ['length' => 255]);
         $builder->addNamedField('startDate', 'datetime', 'start_date');
         $builder->addNamedField('endDate', 'datetime', 'end_date');
@@ -451,8 +451,6 @@ class BpMessageLot
     /**
      * Get create lot payload.
      * Doctrine automatically converts JSON to array.
-     *
-     * @return array|null
      */
     public function getCreateLotPayload(): ?array
     {
@@ -462,8 +460,6 @@ class BpMessageLot
     /**
      * Set create lot payload.
      * Doctrine automatically converts array to JSON.
-     *
-     * @param array|null $createLotPayload
      */
     public function setCreateLotPayload(?array $createLotPayload): self
     {
