@@ -20,6 +20,16 @@
                 <i class="fa fa-refresh"></i> {{ 'mautic.bpmessage.lot.reprocess'|trans }}
             </a>
         {% endif %}
+        {# Processar: lotes prontos para enviar (OPEN ou CREATING com externalLotId) #}
+        {% if lot.status == 'OPEN' or (lot.status == 'CREATING' and lot.externalLotId) %}
+            <a href="{{ path('mautic_bpmessage_lot_process_single', {'id': lot.id}) }}"
+               class="btn btn-primary btn-sm"
+               data-toggle="ajax"
+               data-method="POST"
+               onclick="return confirm('{{ 'mautic.bpmessage.lot.process.confirm'|trans }}');">
+                <i class="fa fa-play"></i> {{ 'mautic.bpmessage.lot.action.process'|trans }}
+            </a>
+        {% endif %}
         {# Cancelar: apenas lotes em andamento #}
         {% if lot.status in ['CREATING', 'OPEN', 'SENDING'] %}
             <a href="{{ path('mautic_bpmessage_lot_cancel', {'id': lot.id}) }}"

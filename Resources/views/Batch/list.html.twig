@@ -106,6 +106,16 @@
                                                 <span class="fa fa-refresh"></span> {{ 'mautic.bpmessage.lot.action.retry'|trans }}
                                             </a>
                                         {% endif %}
+                                        {# Processar: lotes prontos para enviar #}
+                                        {% if lot.status == 'OPEN' or (lot.status == 'CREATING' and lot.externalLotId) %}
+                                            <a href="{{ path('mautic_bpmessage_lot_process_single', {'id': lot.id}) }}"
+                                               class="btn btn-primary btn-xs"
+                                               data-toggle="ajax"
+                                               data-method="POST"
+                                               title="{{ 'mautic.bpmessage.lot.action.process'|trans }}">
+                                                <span class="fa fa-play"></span> {{ 'mautic.bpmessage.lot.action.process'|trans }}
+                                            </a>
+                                        {% endif %}
                                         {# Cancelar: lotes em andamento #}
                                         {% if lot.status in ['CREATING', 'OPEN', 'SENDING'] %}
                                             <a href="{{ path('mautic_bpmessage_lot_cancel', {'id': lot.id}) }}"
