@@ -74,14 +74,13 @@ class BpMessageEmailModel
             // Get or create active email lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Check if lead has email address
-            $emailTo = $config['email_to'] ?? $lead->getEmail();
-            $hasEmail = !empty($emailTo);
-
             // Map lead to email format (passing lot for book_business_foreign_id)
             $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign, $lot);
 
-            if ($hasEmail) {
+            // Check if lead has email address (check AFTER mapping, as tokens are processed there)
+            $emailTo = $emailData['to'] ?? '';
+
+            if (!empty($emailTo)) {
                 // Queue email normally (PENDING status)
                 $this->lotManager->queueEmail($lot, $lead, $emailData);
 
@@ -97,8 +96,7 @@ class BpMessageEmailModel
                 ];
             }
 
-            // No email - queue as FAILED but still return success to campaign
-            // This ensures the contact is registered in the lot but won't be sent to BpMessage
+            // No email - queue as FAILED for metrics tracking
             $errorMessage = 'Contato sem email';
 
             $this->lotManager->queueEmailWithStatus(
@@ -115,7 +113,7 @@ class BpMessageEmailModel
                 'campaign_id' => $campaign->getId(),
             ]);
 
-            // Return success to campaign - contact is registered but marked as failed in queue
+            // Return success to campaign - contact is registered but marked as failed
             return [
                 'success' => true,
                 'message' => 'Contact registered (no email - marked as failed)',

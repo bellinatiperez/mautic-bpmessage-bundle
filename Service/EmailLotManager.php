@@ -9,7 +9,6 @@ use Mautic\CampaignBundle\Entity\Campaign;
 use Mautic\LeadBundle\Entity\Lead;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
-use MauticPlugin\MauticBpMessageBundle\Exception\LotCreationException;
 use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use Psr\Log\LoggerInterface;
 
@@ -88,38 +87,7 @@ class EmailLotManager
             ]);
         }
 
-        // Check if there's a recent CREATING lot (within last 60 seconds) to prevent duplicates
-        // This happens when multiple leads are processed in quick succession
-        // Must match same configuration: idServiceSettings (idQuotaSettings is always 0 for emails)
-        $recentThreshold = new \DateTime('-60 seconds');
-        $qbCreating      = $this->entityManager->createQueryBuilder();
-        $qbCreating->select('l')
-            ->from(BpMessageLot::class, 'l')
-            ->where('l.campaignId = :campaignId')
-            ->andWhere('l.status = :status')
-            ->andWhere('l.idQuotaSettings = 0')
-            ->andWhere('l.idServiceSettings = :idServiceSettings')
-            ->andWhere('l.createdAt > :threshold')
-            ->setParameter('campaignId', $campaign->getId())
-            ->setParameter('status', 'CREATING')
-            ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
-            ->setParameter('threshold', $recentThreshold)
-            ->orderBy('l.createdAt', 'DESC')
-            ->setMaxResults(1);
-
-        $creatingLot = $qbCreating->getQuery()->getOneOrNullResult();
-
-        if (null !== $creatingLot) {
-            $this->logger->info('BpMessage Email: Reusing recent CREATING lot to prevent duplicates', [
-                'lot_id'      => $creatingLot->getId(),
-                'campaign_id' => $campaign->getId(),
-                'created_at'  => $creatingLot->getCreatedAt()->format('Y-m-d H:i:s'),
-            ]);
-
-            return $creatingLot;
-        }
-
-        // Create new email lot
+        // Create new email lot (local only - API call happens during processing)
         $this->logger->info('BpMessage Email: Creating new lot', [
             'campaign_id'   => $campaign->getId(),
             'campaign_name' => $campaign->getName(),
@@ -129,9 +97,14 @@ class EmailLotManager
     }
 
     /**
-     * Create a new email lot.
+     * Create a new email lot (local only - API call happens during processing).
      *
-     * @throws LotCreationException if lot creation fails
+     * This method creates a local lot record without calling the BpMessage API.
+     * The API call to create the lot happens when the lot is processed (processLot).
+     * This prevents creating empty lots in the API when contacts don't have email addresses.
+     *
+     * Note: startDate and endDate are calculated when the lot is created in BpMessage API,
+     * not here. This ensures the dates are accurate at the time of actual processing.
      */
     private function createLot(Campaign $campaign, array $config): BpMessageLot
     {
@@ -139,47 +112,13 @@ class EmailLotManager
         $lot = new BpMessageLot();
         $lot->setName($config['lot_name'] ?? "Email Campaign {$campaign->getName()}");
 
-        // Calculate startDate and endDate in Brazil timezone
-        // Using America/Sao_Paulo (Brazil) - hardcoded as this is for Brazilian market
-        $timeWindow      = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300); // seconds
-        $localTimezone   = new \DateTimeZone('America/Sao_Paulo');
+        $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300);
 
-        // Create dates in local timezone - Doctrine will convert to UTC when saving
-        $now = new \DateTime('now', $localTimezone);
+        // Set placeholder dates - actual dates will be calculated when lot is created in API
+        $now = new \DateTime();
+        $lot->setStartDate($now);
+        $lot->setEndDate((clone $now)->modify("+{$timeWindow} seconds"));
 
-        // Check if lot_data has custom startDate/endDate
-        $startDate = $now;
-        $endDate   = (clone $now)->modify("+{$timeWindow} seconds");
-
-        if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
-            // Check for startDate in lot_data
-            if (!empty($config['lot_data']['startDate'])) {
-                try {
-                    $startDate = new \DateTime($config['lot_data']['startDate']);
-                } catch (\Exception $e) {
-                    $this->logger->warning('BpMessage Email: Invalid startDate format, using current time', [
-                        'startDate' => $config['lot_data']['startDate'],
-                        'error'     => $e->getMessage(),
-                    ]);
-                }
-            }
-
-            // Check for endDate in lot_data
-            if (!empty($config['lot_data']['endDate'])) {
-                try {
-                    $endDate = new \DateTime($config['lot_data']['endDate']);
-                } catch (\Exception $e) {
-                    $this->logger->warning('BpMessage Email: Invalid endDate format, calculating from startDate + timeWindow', [
-                        'endDate' => $config['lot_data']['endDate'],
-                        'error'   => $e->getMessage(),
-                    ]);
-                    $endDate = (clone $startDate)->modify("+{$timeWindow} seconds");
-                }
-            }
-        }
-
-        $lot->setStartDate($startDate);
-        $lot->setEndDate($endDate);
         $lot->setUserCpf('system');
         $lot->setIdQuotaSettings(0); // Not used for email lots
         $lot->setIdServiceSettings((int) $config['id_service_settings']);
@@ -187,124 +126,59 @@ class EmailLotManager
         $lot->setApiBaseUrl($config['api_base_url']);
         $lot->setBatchSize((int) ($config['batch_size'] ?? $config['default_batch_size'] ?? 1000));
         $lot->setTimeWindow($timeWindow);
-        $lot->setStatus('CREATING');
+        $lot->setStatus('OPEN');
 
         // Set book_business_foreign_id if provided
         if (!empty($config['book_business_foreign_id'])) {
             $lot->setBookBusinessForeignId($config['book_business_foreign_id']);
         }
 
-        // Save to database first
-        $this->entityManager->persist($lot);
-        $this->entityManager->flush();
-
-        // Call BpMessage API to create email lot
-        $this->client->setBaseUrl($config['api_base_url']);
-
-        // Send dates in local timezone as ISO 8601 with milliseconds
-        // BpMessage API expects local time (not UTC)
-        // Force conversion to local timezone (Doctrine stores in UTC)
-        // Using America/Sao_Paulo (Brazil) - hardcoded as this is for Brazilian market
-        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-
-        $startDate = clone $lot->getStartDate();
-        $startDate->setTimezone($localTimezone);
-
-        $endDate = clone $lot->getEndDate();
-        $endDate->setTimezone($localTimezone);
-
-        $startDateFormatted = $startDate->format('Y-m-d\TH:i:s.vP');
-        $endDateFormatted = $endDate->format('Y-m-d\TH:i:s.vP');
-
-        $lotData = [
+        // Save config for API payload creation during processing
+        // Dates will be calculated at that time
+        $lotConfig = [
             'name'              => $lot->getName(),
-            'startDate'         => $startDateFormatted,
-            'endDate'           => $endDateFormatted,
             'user'              => 'system',
             'idServiceSettings' => $lot->getIdServiceSettings(),
         ];
 
         // Add optional fields
         if (!empty($config['crm_id'])) {
-            $lotData['crmId'] = (int) $config['crm_id'];
+            $lotConfig['crmId'] = (int) $config['crm_id'];
         }
 
         if (!empty($config['book_business_foreign_id'])) {
-            $lotData['bookBusinessForeignId'] = $config['book_business_foreign_id'];
+            $lotConfig['bookBusinessForeignId'] = $config['book_business_foreign_id'];
         }
 
         if (!empty($config['step_foreign_id'])) {
-            $lotData['stepForeignId'] = $config['step_foreign_id'];
+            $lotConfig['stepForeignId'] = $config['step_foreign_id'];
         }
 
         if (isset($config['is_radar_lot'])) {
-            $lotData['isRadarLot'] = (bool) $config['is_radar_lot'];
+            $lotConfig['isRadarLot'] = (bool) $config['is_radar_lot'];
         }
 
-        // Merge lot_data from config if provided
+        // Include lot_data for custom fields (but NOT dates - those are calculated during processing)
         if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
-            $lotData = array_merge($lotData, $config['lot_data']);
+            // Remove date fields from lot_data - they will be calculated during processing
+            $lotDataWithoutDates = $config['lot_data'];
+            unset($lotDataWithoutDates['startDate'], $lotDataWithoutDates['endDate']);
+            $lotConfig = array_merge($lotConfig, $lotDataWithoutDates);
         }
 
-        // Save the complete payload that will be sent to the API
-        // This allows monitoring of values like startDate and endDate
-        $lot->setCreateLotPayload($lotData);
+        $lot->setCreateLotPayload($lotConfig);
+
+        // Save to database
+        $this->entityManager->persist($lot);
         $this->entityManager->flush();
 
-        try {
-            $result = $this->client->createEmailLot($lotData);
+        $this->logger->info('BpMessage Email: Lot created locally (dates will be calculated during API creation)', [
+            'lot_id'      => $lot->getId(),
+            'campaign_id' => $campaign->getId(),
+            'status'      => $lot->getStatus(),
+        ]);
 
-            if (!$result['success']) {
-                $lot->setStatus('FAILED');
-                $lot->setErrorMessage($result['error']);
-                $this->entityManager->flush();
-
-                throw new LotCreationException("Failed to create email lot in BpMessage: {$result['error']}", $lot->getId());
-            }
-
-            // Update lot with external ID
-            $lot->setExternalLotId((string) $result['idLotEmail']);
-            $lot->setStatus('OPEN');
-
-            // Ensure the entity is managed and flush immediately
-            $this->entityManager->persist($lot);
-            $this->entityManager->flush();
-
-            // Verify persistence with a direct SQL update as fallback
-            // This ensures the lot status is updated even if EntityManager has issues during batch processing
-            $connection = $this->entityManager->getConnection();
-            $connection->executeStatement(
-                'UPDATE bpmessage_lot SET status = ?, externalLotId = ? WHERE id = ?',
-                ['OPEN', (string) $result['idLotEmail'], $lot->getId()]
-            );
-
-            // Force refresh from database to ensure we have the latest data
-            $this->entityManager->refresh($lot);
-
-            $this->logger->info('BpMessage Email: Lot created successfully', [
-                'lot_id'          => $lot->getId(),
-                'external_lot_id' => $lot->getExternalLotId(),
-                'status'          => $lot->getStatus(),
-            ]);
-
-            return $lot;
-        } catch (LotCreationException $e) {
-            // Already a LotCreationException, just re-throw it
-            throw $e;
-        } catch (\Exception $e) {
-            // If any other exception occurs during API call, mark lot as FAILED
-            $lot->setStatus('FAILED');
-            $lot->setErrorMessage('API call exception: '.$e->getMessage());
-            $this->entityManager->flush();
-
-            $this->logger->error('BpMessage Email: Exception during lot creation', [
-                'lot_id' => $lot->getId(),
-                'error'  => $e->getMessage(),
-            ]);
-
-            // Wrap in LotCreationException to signal this is a lot-level error, not a lead error
-            throw new LotCreationException('API call exception: '.$e->getMessage(), $lot->getId(), 0, $e);
-        }
+        return $lot;
     }
 
     /**
@@ -389,11 +263,18 @@ class EmailLotManager
 
     /**
      * Send all pending emails for a lot.
+     * Note: This method expects the lot to already have an externalLotId (created via createLotInApi).
      */
     public function sendLotEmails(BpMessageLot $lot): bool
     {
-        if (!$lot->isOpen()) {
-            $this->logger->warning('BpMessage Email: Cannot send emails, lot is not open', [
+        // Verify lot has external ID (should be created by processLot -> createLotInApi)
+        if (empty($lot->getExternalLotId())) {
+            $errorMessage = 'Lot has no external ID - lot must be created in API first';
+            $lot->setErrorMessage($errorMessage);
+            $lot->setStatus('FAILED');
+            $this->entityManager->flush();
+
+            $this->logger->error('BpMessage Email: '.$errorMessage, [
                 'lot_id' => $lot->getId(),
                 'status' => $lot->getStatus(),
             ]);
@@ -477,7 +358,7 @@ class EmailLotManager
                 $success = false;
 
                 // Save error message to lot for user visibility
-                $errorMessage = "Batch {$batchIndex} failed: ".$result['error'];
+                $errorMessage = $result['error'];
                 $lot->setErrorMessage($errorMessage);
                 $lot->setStatus('FAILED');
 
@@ -567,7 +448,7 @@ class EmailLotManager
 
         $lot->setStatus('FINISHED');
         $lot->setFinishedAt($now);
-        $lot->setErrorMessage("Finish API call failed: {$result['error']}");
+        $lot->setErrorMessage($result['error']);
         $this->entityManager->flush();
 
         // Force update with SQL to ensure the lot is marked as FINISHED
@@ -575,7 +456,7 @@ class EmailLotManager
         $connection = $this->entityManager->getConnection();
         $connection->executeStatement(
             'UPDATE bpmessage_lot SET status = ?, finished_at = ?, error_message = ? WHERE id = ?',
-            ['FINISHED', $now->format('Y-m-d H:i:s'), "Finish API call failed: {$result['error']}", $lot->getId()]
+            ['FINISHED', $now->format('Y-m-d H:i:s'), $result['error'], $lot->getId()]
         );
 
         // Refresh to get latest data
@@ -590,10 +471,28 @@ class EmailLotManager
     }
 
     /**
-     * Process an email lot (send emails and finish).
+     * Process an email lot (create in API, send emails, and finish).
+     *
+     * This method handles the complete lot lifecycle:
+     * 1. Create lot in BpMessage API (if not already created)
+     * 2. Send all pending emails to the API
+     * 3. Finalize the lot in the API
      */
     public function processLot(BpMessageLot $lot): bool
     {
+        // Step 1: Create lot in BpMessage API if not already created
+        if (empty($lot->getExternalLotId())) {
+            $this->logger->info('BpMessage Email: Creating lot in API before processing', [
+                'lot_id' => $lot->getId(),
+            ]);
+
+            if (!$this->createLotInApi($lot)) {
+                // createLotInApi already sets error message and status
+                return false;
+            }
+        }
+
+        // Step 2: Send all pending emails
         $success = $this->sendLotEmails($lot);
 
         if (!$success) {
@@ -616,6 +515,116 @@ class EmailLotManager
             return false;
         }
 
+        // Step 3: Finalize the lot
         return $this->finishLot($lot);
+    }
+
+    /**
+     * Create an email lot in the BpMessage API.
+     *
+     * @return bool True if creation succeeded, false otherwise
+     */
+    private function createLotInApi(BpMessageLot $lot): bool
+    {
+        // Get the saved payload
+        $lotData = $lot->getCreateLotPayload();
+
+        if (empty($lotData)) {
+            $errorMessage = 'No payload saved for lot creation';
+            $lot->setStatus('FAILED');
+            $lot->setErrorMessage($errorMessage);
+            $this->entityManager->flush();
+
+            $this->logger->error('BpMessage Email: '.$errorMessage, [
+                'lot_id' => $lot->getId(),
+            ]);
+
+            return false;
+        }
+
+        // Update dates to current time since lot creation was deferred
+        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
+        $now = new \DateTime('now', $localTimezone);
+        $timeWindow = $lot->getTimeWindow();
+        $endDate = (clone $now)->modify("+{$timeWindow} seconds");
+
+        // Update the payload with fresh dates
+        $lotData['startDate'] = $now->format('Y-m-d\TH:i:s.vP');
+        $lotData['endDate'] = $endDate->format('Y-m-d\TH:i:s.vP');
+
+        // Update lot entity dates
+        $lot->setStartDate($now);
+        $lot->setEndDate($endDate);
+        $lot->setCreateLotPayload($lotData);
+        $this->entityManager->flush();
+
+        // Set API base URL
+        $this->client->setBaseUrl($lot->getApiBaseUrl());
+
+        $this->logger->info('BpMessage Email: Creating lot in API', [
+            'lot_id'  => $lot->getId(),
+            'payload' => $lotData,
+        ]);
+
+        try {
+            $result = $this->client->createEmailLot($lotData);
+
+            if (!$result['success']) {
+                $lot->setStatus('FAILED');
+                $lot->setErrorMessage($result['error']);
+                $this->entityManager->flush();
+
+                // Force SQL update
+                $connection = $this->entityManager->getConnection();
+                $connection->executeStatement(
+                    'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                    ['FAILED', $result['error'], $lot->getId()]
+                );
+
+                $this->logger->error('BpMessage Email: API CreateEmailLot failed', [
+                    'lot_id' => $lot->getId(),
+                    'error'  => $result['error'],
+                ]);
+
+                return false;
+            }
+
+            // Update lot with external ID
+            $lot->setExternalLotId((string) $result['idLotEmail']);
+            $this->entityManager->persist($lot);
+            $this->entityManager->flush();
+
+            // Force SQL update
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET externalLotId = ? WHERE id = ?',
+                [(string) $result['idLotEmail'], $lot->getId()]
+            );
+
+            $this->logger->info('BpMessage Email: Lot created successfully in API', [
+                'lot_id'          => $lot->getId(),
+                'external_lot_id' => $lot->getExternalLotId(),
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            $lot->setStatus('FAILED');
+            $lot->setErrorMessage($e->getMessage());
+            $this->entityManager->flush();
+
+            // Force SQL update
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                ['FAILED', $e->getMessage(), $lot->getId()]
+            );
+
+            $this->logger->error('BpMessage Email: Exception creating email lot in API', [
+                'lot_id' => $lot->getId(),
+                'error'  => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 }

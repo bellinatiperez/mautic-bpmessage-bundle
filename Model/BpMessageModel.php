@@ -82,7 +82,6 @@ class BpMessageModel
             $messageData = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
 
             // Check if phone is present in the message data
-            // Phone is extracted from phone_pattern field
             $hasPhone = !empty($messageData['phone']) || !empty($messageData['areaCode']);
 
             if ($hasPhone) {
@@ -101,8 +100,7 @@ class BpMessageModel
                 ];
             }
 
-            // No phone - queue as FAILED but still return success to campaign
-            // This ensures the contact is registered in the lot but won't be sent to BpMessage
+            // No phone - queue as FAILED for metrics tracking
             $errorMessage = 'Contato sem telefone';
 
             $this->lotManager->queueMessageWithStatus(
@@ -119,7 +117,7 @@ class BpMessageModel
                 'campaign_id' => $campaign->getId(),
             ]);
 
-            // Return success to campaign - contact is registered but marked as failed in queue
+            // Return success to campaign - contact is registered but marked as failed
             return [
                 'success' => true,
                 'message' => 'Contact registered (no phone - marked as failed)',

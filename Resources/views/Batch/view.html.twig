@@ -20,16 +20,6 @@
                 <i class="fa fa-refresh"></i> {{ 'mautic.bpmessage.lot.reprocess'|trans }}
             </a>
         {% endif %}
-        {# Processar Agora: lotes prontos para enviar (OPEN ou CREATING com externalLotId) #}
-        {% if lot.status == 'OPEN' or (lot.status == 'CREATING' and lot.externalLotId) %}
-            <a href="{{ path('mautic_bpmessage_lot_process_single', {'id': lot.id}) }}"
-               class="btn btn-primary btn-sm"
-               data-toggle="ajax"
-               data-method="POST"
-               onclick="return confirm('{{ 'mautic.bpmessage.lot.process.confirm'|trans }}');">
-                <i class="fa fa-play"></i> {{ 'mautic.bpmessage.lot.process.single'|trans }}
-            </a>
-        {% endif %}
         {# Cancelar: apenas lotes em andamento #}
         {% if lot.status in ['CREATING', 'OPEN', 'SENDING'] %}
             <a href="{{ path('mautic_bpmessage_lot_cancel', {'id': lot.id}) }}"
@@ -45,14 +35,6 @@
 
 {% block content %}
 <div class="pa-md">
-    {# Error Alert - Show prominently if lot has error #}
-    {% if lot.errorMessage %}
-        <div class="alert alert-danger">
-            <h4><i class="fa fa-exclamation-triangle"></i> {{ 'mautic.core.error'|trans }}</h4>
-            <p><strong>{{ lot.errorMessage }}</strong></p>
-        </div>
-    {% endif %}
-
     {# Lot Information #}
     <div class="panel panel-default">
         <div class="panel-heading">
@@ -132,9 +114,8 @@
             </div>
 
             {% if lot.errorMessage %}
-                <div class="alert alert-danger mt-3">
-                    <h4><i class="fa fa-exclamation-triangle"></i> {{ 'mautic.core.error'|trans }}</h4>
-                    <pre>{{ lot.errorMessage }}</pre>
+                <div class="alert alert-danger mt-3" style="margin-top: 15px;">
+                    <i class="fa fa-exclamation-triangle"></i> {{ lot.errorMessage }}
                 </div>
             {% endif %}
         </div>

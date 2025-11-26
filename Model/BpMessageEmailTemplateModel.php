@@ -8,7 +8,6 @@ use Doctrine\ORM\EntityManager;
 use Mautic\CampaignBundle\Entity\Campaign;
 use Mautic\LeadBundle\Entity\Lead;
 use Mautic\PluginBundle\Helper\IntegrationHelper;
-use MauticPlugin\MauticBpMessageBundle\Exception\LotCreationException;
 use MauticPlugin\MauticBpMessageBundle\Integration\BpMessageIntegration;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailLotManager;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailTemplateMessageMapper;
@@ -92,10 +91,10 @@ class BpMessageEmailTemplateModel
             // Map lead to email format (with template rendering, passing lot for book_business_foreign_id)
             $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign, $lot);
 
-            // Check if lead has email address (from the mapped data)
-            $hasEmail = !empty($emailData['to']);
+            // Check if lead has email address (check AFTER mapping, as tokens are processed there)
+            $emailTo = $emailData['to'] ?? '';
 
-            if ($hasEmail) {
+            if (!empty($emailTo)) {
                 // Queue email normally (PENDING status)
                 $this->lotManager->queueEmail($lot, $lead, $emailData);
 
@@ -112,8 +111,7 @@ class BpMessageEmailTemplateModel
                 ];
             }
 
-            // No email - queue as FAILED but still return success to campaign
-            // This ensures the contact is registered in the lot but won't be sent to BpMessage
+            // No email - queue as FAILED for metrics tracking
             $errorMessage = 'Contato sem email';
 
             $this->lotManager->queueEmailWithStatus(
@@ -130,15 +128,11 @@ class BpMessageEmailTemplateModel
                 'campaign_id' => $campaign->getId(),
             ]);
 
-            // Return success to campaign - contact is registered but marked as failed in queue
+            // Return success to campaign - contact is registered but marked as failed
             return [
                 'success' => true,
                 'message' => 'Contact registered (no email - marked as failed)',
             ];
-        } catch (LotCreationException $e) {
-            // Re-throw LotCreationException to allow CampaignSubscriber to handle it properly
-            // This exception indicates a lot-level error, not a lead-specific error
-            throw $e;
         } catch (\Exception $e) {
             // Lead-specific errors are caught and returned as failure
             $this->logger->error('BpMessage Email Template: Failed to send email', [

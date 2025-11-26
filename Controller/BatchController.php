@@ -219,6 +219,8 @@ class BatchController
 
         try {
             // Reset lot and messages to PENDING
+            // IMPORTANT: Do NOT reset messages that failed due to missing phone/email
+            // These contacts cannot be sent and should remain as FAILED
             $em->createQueryBuilder()
                 ->update(BpMessageQueue::class, 'q')
                 ->set('q.status', ':pending')
@@ -226,9 +228,11 @@ class BatchController
                 ->set('q.errorMessage', 'NULL')
                 ->where('q.lot = :lot')
                 ->andWhere('q.status IN (:statuses)')
+                ->andWhere('q.errorMessage NOT IN (:permanent_errors) OR q.errorMessage IS NULL')
                 ->setParameter('pending', 'PENDING')
                 ->setParameter('lot', $lot)
                 ->setParameter('statuses', ['FAILED'])
+                ->setParameter('permanent_errors', ['Contato sem telefone', 'Contato sem email'])
                 ->getQuery()
                 ->execute();
 
@@ -354,7 +358,8 @@ class BatchController
             $this->flashBag->add($e->getMessage(), FlashBag::LEVEL_ERROR);
         }
 
-        return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+        // Redirect back to list if came from list, otherwise to lot view
+        return $this->redirectBackToReferer($request, $id);
     }
 
     /**
@@ -521,7 +526,8 @@ class BatchController
             $this->flashBag->add($e->getMessage(), FlashBag::LEVEL_ERROR);
         }
 
-        return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+        // Redirect back to list if came from list, otherwise to lot view
+        return $this->redirectBackToReferer($request, $id);
     }
 
     /**
@@ -588,18 +594,30 @@ class BatchController
 
         $this->flashBag->add('mautic.bpmessage.lot.cancelled', FlashBag::LEVEL_SUCCESS);
 
-        return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+        // Redirect back to list if came from list, otherwise to lot view
+        return $this->redirectBackToReferer($request, $id);
     }
 
     /**
      * Process pending lots manually.
+     * Processes both SMS/WhatsApp lots and Email lots using the correct model for each.
      */
     public function processAction(Request $request): Response
     {
         $limit = (int) $request->query->get('limit', 10);
 
-        // Use BpMessageModel to process lots
-        $stats = $this->bpMessageModel->processPendingLots($limit);
+        // Process SMS/WhatsApp lots
+        $smsStats = $this->bpMessageModel->processOpenLots(false);
+
+        // Process Email lots
+        $emailStats = $this->bpMessageEmailModel->processOpenLots(false);
+
+        // Combine stats
+        $stats = [
+            'processed' => $smsStats['processed'] + $emailStats['processed'],
+            'succeeded' => $smsStats['succeeded'] + $emailStats['succeeded'],
+            'failed'    => $smsStats['failed'] + $emailStats['failed'],
+        ];
 
         if ($request->isXmlHttpRequest()) {
             return new JsonResponse([
@@ -622,5 +640,22 @@ class BatchController
         );
 
         return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
+    }
+
+    /**
+     * Redirect back to the referer page (list or lot view).
+     * If referer contains '/lots' (list page), redirect to list. Otherwise, redirect to lot view.
+     */
+    private function redirectBackToReferer(Request $request, int $lotId): RedirectResponse
+    {
+        $referer = $request->headers->get('referer');
+
+        // Check if came from list page (URL ends with /lots or /lots/{page})
+        if ($referer && preg_match('#/bpmessage/lots(?:/\d+)?(?:\?|$)#', $referer)) {
+            return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
+        }
+
+        // Default: redirect to lot view
+        return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $lotId]));
     }
 }

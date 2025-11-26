@@ -90,78 +90,7 @@ class LotManager
             ]);
         }
 
-        // Check if there's a FAILED_CREATION lot that can be reused
-        // These lots failed during API call but can accept contacts for later retry
-        // Reuse recent FAILED_CREATION lots (within last 24 hours) to avoid creating multiple failed lots
-        $failedThreshold = new \DateTime('-24 hours');
-        $qbFailed        = $this->entityManager->createQueryBuilder();
-        $qbFailed->select('l')
-            ->from(BpMessageLot::class, 'l')
-            ->where('l.campaignId = :campaignId')
-            ->andWhere('l.status = :status')
-            ->andWhere('l.idQuotaSettings = :idQuotaSettings')
-            ->andWhere('l.idServiceSettings = :idServiceSettings')
-            ->andWhere('l.serviceType = :serviceType')
-            ->andWhere('l.createdAt > :threshold')
-            ->andWhere('l.messagesCount < :maxCount')
-            ->setParameter('campaignId', $campaign->getId())
-            ->setParameter('status', 'FAILED_CREATION')
-            ->setParameter('idQuotaSettings', (int) $config['id_quota_settings'])
-            ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
-            ->setParameter('serviceType', (int) ($config['service_type'] ?? 2))
-            ->setParameter('threshold', $failedThreshold)
-            ->setParameter('maxCount', 10000) // Don't reuse if too many messages accumulated
-            ->orderBy('l.createdAt', 'DESC')
-            ->setMaxResults(1);
-
-        $failedLot = $qbFailed->getQuery()->getOneOrNullResult();
-
-        if (null !== $failedLot) {
-            $this->logger->info('BpMessage: Reusing FAILED_CREATION lot - contacts will be queued for retry', [
-                'lot_id'         => $failedLot->getId(),
-                'campaign_id'    => $campaign->getId(),
-                'messages_count' => $failedLot->getMessagesCount(),
-                'error'          => $failedLot->getErrorMessage(),
-            ]);
-
-            return $failedLot;
-        }
-
-        // Check if there's a recent CREATING lot (within last 60 seconds) to prevent duplicates
-        // This happens when multiple leads are processed in quick succession
-        // Must match same configuration: idQuotaSettings + idServiceSettings + serviceType
-        $recentThreshold = new \DateTime('-60 seconds');
-        $qbCreating      = $this->entityManager->createQueryBuilder();
-        $qbCreating->select('l')
-            ->from(BpMessageLot::class, 'l')
-            ->where('l.campaignId = :campaignId')
-            ->andWhere('l.status = :status')
-            ->andWhere('l.idQuotaSettings = :idQuotaSettings')
-            ->andWhere('l.idServiceSettings = :idServiceSettings')
-            ->andWhere('l.serviceType = :serviceType')
-            ->andWhere('l.createdAt > :threshold')
-            ->setParameter('campaignId', $campaign->getId())
-            ->setParameter('status', 'CREATING')
-            ->setParameter('idQuotaSettings', (int) $config['id_quota_settings'])
-            ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
-            ->setParameter('serviceType', (int) ($config['service_type'] ?? 2))
-            ->setParameter('threshold', $recentThreshold)
-            ->orderBy('l.createdAt', 'DESC')
-            ->setMaxResults(1);
-
-        $creatingLot = $qbCreating->getQuery()->getOneOrNullResult();
-
-        if (null !== $creatingLot) {
-            $this->logger->info('BpMessage: Reusing recent CREATING lot to prevent duplicates', [
-                'lot_id'      => $creatingLot->getId(),
-                'campaign_id' => $campaign->getId(),
-                'created_at'  => $creatingLot->getCreatedAt()->format('Y-m-d H:i:s'),
-            ]);
-
-            return $creatingLot;
-        }
-
-        // Create new lot
+        // Create new lot (local only - API call happens during processing)
         $this->logger->info('BpMessage: Creating new lot', [
             'campaign_id'   => $campaign->getId(),
             'campaign_name' => $campaign->getName(),
@@ -171,9 +100,14 @@ class LotManager
     }
 
     /**
-     * Create a new lot.
+     * Create a new lot (local only - API call happens during processing).
      *
-     * @throws \RuntimeException if lot creation fails
+     * This method creates a local lot record without calling the BpMessage API.
+     * The API call to create the lot happens when the lot is processed (processLot).
+     * This prevents creating empty lots in the API when contacts don't have phone numbers.
+     *
+     * Note: startDate and endDate are calculated when the lot is created in BpMessage API,
+     * not here. This ensures the dates are accurate at the time of actual processing.
      */
     private function createLot(Campaign $campaign, array $config): BpMessageLot
     {
@@ -181,56 +115,22 @@ class LotManager
         $lot = new BpMessageLot();
         $lot->setName($config['lot_name'] ?? "Campaign {$campaign->getName()}");
 
-        // Calculate startDate and endDate in Brazil timezone
-        // Using America/Sao_Paulo (Brazil) - hardcoded as this is for Brazilian market
-        $timeWindow      = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300); // seconds
-        $localTimezone   = new \DateTimeZone('America/Sao_Paulo');
+        $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300);
 
-        // Create dates in local timezone - Doctrine will convert to UTC when saving
-        $now = new \DateTime('now', $localTimezone);
+        // Set placeholder dates - actual dates will be calculated when lot is created in API
+        $now = new \DateTime();
+        $lot->setStartDate($now);
+        $lot->setEndDate((clone $now)->modify("+{$timeWindow} seconds"));
 
-        // Check if lot_data has custom startDate/endDate
-        $startDate = $now;
-        $endDate   = (clone $now)->modify("+{$timeWindow} seconds");
-
-        if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
-            // Check for startDate in lot_data
-            if (!empty($config['lot_data']['startDate'])) {
-                try {
-                    $startDate = new \DateTime($config['lot_data']['startDate']);
-                } catch (\Exception $e) {
-                    $this->logger->warning('BpMessage: Invalid startDate format, using current time', [
-                        'startDate' => $config['lot_data']['startDate'],
-                        'error'     => $e->getMessage(),
-                    ]);
-                }
-            }
-
-            // Check for endDate in lot_data
-            if (!empty($config['lot_data']['endDate'])) {
-                try {
-                    $endDate = new \DateTime($config['lot_data']['endDate']);
-                } catch (\Exception $e) {
-                    $this->logger->warning('BpMessage: Invalid endDate format, calculating from startDate + timeWindow', [
-                        'endDate' => $config['lot_data']['endDate'],
-                        'error'   => $e->getMessage(),
-                    ]);
-                    $endDate = (clone $startDate)->modify("+{$timeWindow} seconds");
-                }
-            }
-        }
-
-        $lot->setStartDate($startDate);
-        $lot->setEndDate($endDate);
-        $lot->setUserCpf('system'); // Fixed value for all lots
+        $lot->setUserCpf('system');
         $lot->setIdQuotaSettings((int) $config['id_quota_settings']);
         $lot->setIdServiceSettings((int) $config['id_service_settings']);
-        $lot->setServiceType((int) ($config['service_type'] ?? 2)); // 1=SMS, 2=WhatsApp, 3=RCS
+        $lot->setServiceType((int) ($config['service_type'] ?? 2));
         $lot->setCampaignId($campaign->getId());
         $lot->setApiBaseUrl($config['api_base_url']);
         $lot->setBatchSize((int) ($config['batch_size'] ?? $config['default_batch_size'] ?? 1000));
         $lot->setTimeWindow($timeWindow);
-        $lot->setStatus('CREATING');
+        $lot->setStatus('OPEN');
 
         if (!empty($config['image_url'])) {
             $lot->setImageUrl($config['image_url']);
@@ -240,118 +140,44 @@ class LotManager
             $lot->setImageName($config['image_name']);
         }
 
-        // Save to database first
-        $this->entityManager->persist($lot);
-        $this->entityManager->flush();
-
-        // Call BpMessage API to create lot
-        $this->client->setBaseUrl($config['api_base_url']);
-
-        // Send dates in local timezone as ISO 8601 with milliseconds
-        // BpMessage API expects local time (not UTC)
-        // Force conversion to local timezone (Doctrine stores in UTC)
-        // Using America/Sao_Paulo (Brazil) - hardcoded as this is for Brazilian market
-        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-
-        $startDate = clone $lot->getStartDate();
-        $startDate->setTimezone($localTimezone);
-
-        $endDate = clone $lot->getEndDate();
-        $endDate->setTimezone($localTimezone);
-
-        $startDateFormatted = $startDate->format('Y-m-d\TH:i:s.vP');
-        $endDateFormatted = $endDate->format('Y-m-d\TH:i:s.vP');
-
-        $lotData = [
+        // Save config for API payload creation during processing
+        // Dates will be calculated at that time
+        $lotConfig = [
             'name'              => $lot->getName(),
-            'startDate'         => $startDateFormatted,
-            'endDate'           => $endDateFormatted,
-            'user'              => 'system', // Fixed value
+            'user'              => 'system',
             'idQuotaSettings'   => $lot->getIdQuotaSettings(),
             'idServiceSettings' => $lot->getIdServiceSettings(),
         ];
 
-        if (null !== $lot->getImageUrl()) {
-            $lotData['imageUrl'] = $lot->getImageUrl();
+        if (!empty($config['image_url'])) {
+            $lotConfig['imageUrl'] = $config['image_url'];
         }
 
-        if (null !== $lot->getImageName()) {
-            $lotData['imageName'] = $lot->getImageName();
+        if (!empty($config['image_name'])) {
+            $lotConfig['imageName'] = $config['image_name'];
         }
 
-        // Merge lot_data from config if provided
+        // Include lot_data for custom fields (but NOT dates - those are calculated during processing)
         if (!empty($config['lot_data']) && is_array($config['lot_data'])) {
-            $lotData = array_merge($lotData, $config['lot_data']);
+            // Remove date fields from lot_data - they will be calculated during processing
+            $lotDataWithoutDates = $config['lot_data'];
+            unset($lotDataWithoutDates['startDate'], $lotDataWithoutDates['endDate']);
+            $lotConfig = array_merge($lotConfig, $lotDataWithoutDates);
         }
 
-        // Save the complete payload that will be sent to the API
-        // This allows monitoring of values like startDate and endDate
-        $lot->setCreateLotPayload($lotData);
+        $lot->setCreateLotPayload($lotConfig);
+
+        // Save to database
+        $this->entityManager->persist($lot);
         $this->entityManager->flush();
 
-        try {
-            $result = $this->client->createLot($lotData);
+        $this->logger->info('BpMessage: Lot created locally (dates will be calculated during API creation)', [
+            'lot_id'      => $lot->getId(),
+            'campaign_id' => $campaign->getId(),
+            'status'      => $lot->getStatus(),
+        ]);
 
-            if (!$result['success']) {
-                // IMPORTANT: Mark as FAILED but DON'T throw exception
-                // This allows contacts to be queued for later retry
-                $lot->setStatus('FAILED_CREATION');
-                $lot->setErrorMessage($result['error']);
-                $this->entityManager->flush();
-
-                $this->logger->warning('BpMessage: Failed to create lot in API, contacts will be queued for retry', [
-                    'lot_id' => $lot->getId(),
-                    'error'  => $result['error'],
-                ]);
-
-                // Return lot with FAILED_CREATION status
-                // Contacts will be queued and can be retried later
-                return $lot;
-            }
-
-            // Update lot with external ID
-            $lot->setExternalLotId((string) $result['idLot']);
-            $lot->setStatus('OPEN');
-
-            // Ensure the entity is managed and flush immediately
-            $this->entityManager->persist($lot);
-            $this->entityManager->flush();
-
-            // Verify persistence with a direct SQL update as fallback
-            // This ensures the lot status is updated even if EntityManager has issues during batch processing
-            $connection = $this->entityManager->getConnection();
-            $connection->executeStatement(
-                'UPDATE bpmessage_lot SET status = ?, externalLotId = ? WHERE id = ?',
-                ['OPEN', (string) $result['idLot'], $lot->getId()]
-            );
-
-            // Force refresh from database to ensure we have the latest data
-            $this->entityManager->refresh($lot);
-
-            $this->logger->info('BpMessage: Lot created successfully', [
-                'lot_id'          => $lot->getId(),
-                'external_lot_id' => $lot->getExternalLotId(),
-                'status'          => $lot->getStatus(),
-            ]);
-
-            return $lot;
-        } catch (\Exception $e) {
-            // If any exception occurs during API call, mark lot as FAILED_CREATION
-            // This allows contacts to be queued for later retry
-            $lot->setStatus('FAILED_CREATION');
-            $lot->setErrorMessage('API call exception: '.$e->getMessage());
-            $this->entityManager->persist($lot);
-            $this->entityManager->flush();
-
-            $this->logger->error('BpMessage: Exception during lot creation, contacts will be queued for retry', [
-                'lot_id' => $lot->getId(),
-                'error'  => $e->getMessage(),
-            ]);
-
-            // Return lot with FAILED_CREATION status instead of throwing
-            // This allows contacts to be queued and retried later
-            return $lot;
-        }
+        return $lot;
     }
 
     /**
@@ -435,144 +261,6 @@ class LotManager
     }
 
     /**
-     * Register a CREATING lot in the BpMessage API.
-     * This is used to retry lot creation when the initial API call failed.
-     *
-     * @return bool True if registration succeeded, false otherwise
-     */
-    public function registerLotInApi(BpMessageLot $lot): bool
-    {
-        if ('CREATING' !== $lot->getStatus() && 'FAILED_CREATION' !== $lot->getStatus()) {
-            $this->logger->warning('BpMessage: Cannot register lot in API - wrong status', [
-                'lot_id' => $lot->getId(),
-                'status' => $lot->getStatus(),
-            ]);
-
-            return false;
-        }
-
-        // Get the saved payload or rebuild it from lot data
-        $lotData = $lot->getCreateLotPayload();
-
-        if (empty($lotData)) {
-            // Rebuild payload from lot data
-            $this->logger->info('BpMessage: No saved payload, rebuilding from lot data', [
-                'lot_id' => $lot->getId(),
-            ]);
-
-            // Convert dates to local timezone for API
-            $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-
-            $startDate = clone $lot->getStartDate();
-            $startDate->setTimezone($localTimezone);
-
-            $endDate = clone $lot->getEndDate();
-            $endDate->setTimezone($localTimezone);
-
-            $lotData = [
-                'name'              => $lot->getName(),
-                'startDate'         => $startDate->format('Y-m-d\TH:i:s.vP'),
-                'endDate'           => $endDate->format('Y-m-d\TH:i:s.vP'),
-                'user'              => 'system',
-                'idQuotaSettings'   => $lot->getIdQuotaSettings(),
-                'idServiceSettings' => $lot->getIdServiceSettings(),
-            ];
-
-            if (null !== $lot->getImageUrl()) {
-                $lotData['imageUrl'] = $lot->getImageUrl();
-            }
-
-            if (null !== $lot->getImageName()) {
-                $lotData['imageName'] = $lot->getImageName();
-            }
-
-            // Save the rebuilt payload for future use
-            $lot->setCreateLotPayload($lotData);
-            $this->entityManager->flush();
-
-            // Force SQL update
-            $connection = $this->entityManager->getConnection();
-            $connection->executeStatement(
-                'UPDATE bpmessage_lot SET create_lot_payload = ? WHERE id = ?',
-                [json_encode($lotData), $lot->getId()]
-            );
-        }
-
-        // Set API base URL
-        $this->client->setBaseUrl($lot->getApiBaseUrl());
-
-        $this->logger->info('BpMessage: Registering lot in API', [
-            'lot_id'  => $lot->getId(),
-            'payload' => $lotData,
-        ]);
-
-        try {
-            $result = $this->client->createLot($lotData);
-
-            if (!$result['success']) {
-                $errorMessage = 'API CreateLot failed: '.$result['error'];
-                $lot->setStatus('FAILED');
-                $lot->setErrorMessage($errorMessage);
-                $this->entityManager->flush();
-
-                // Force SQL update
-                $connection = $this->entityManager->getConnection();
-                $connection->executeStatement(
-                    'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
-                    ['FAILED', $errorMessage, $lot->getId()]
-                );
-
-                $this->logger->error('BpMessage: '.$errorMessage, [
-                    'lot_id' => $lot->getId(),
-                    'error'  => $result['error'],
-                ]);
-
-                return false;
-            }
-
-            // Update lot with external ID and set to OPEN
-            $lot->setExternalLotId((string) $result['idLot']);
-            $lot->setStatus('OPEN');
-            $lot->setErrorMessage(null);
-            $this->entityManager->persist($lot);
-            $this->entityManager->flush();
-
-            // Force SQL update
-            $connection = $this->entityManager->getConnection();
-            $connection->executeStatement(
-                'UPDATE bpmessage_lot SET status = ?, externalLotId = ?, error_message = NULL WHERE id = ?',
-                ['OPEN', (string) $result['idLot'], $lot->getId()]
-            );
-
-            $this->logger->info('BpMessage: Lot registered successfully in API', [
-                'lot_id'          => $lot->getId(),
-                'external_lot_id' => $lot->getExternalLotId(),
-            ]);
-
-            return true;
-        } catch (\Exception $e) {
-            $errorMessage = 'Exception registering lot in API: '.$e->getMessage();
-            $lot->setStatus('FAILED');
-            $lot->setErrorMessage($errorMessage);
-            $this->entityManager->flush();
-
-            // Force SQL update
-            $connection = $this->entityManager->getConnection();
-            $connection->executeStatement(
-                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
-                ['FAILED', $errorMessage, $lot->getId()]
-            );
-
-            $this->logger->error('BpMessage: '.$errorMessage, [
-                'lot_id' => $lot->getId(),
-                'error'  => $e->getMessage(),
-            ]);
-
-            return false;
-        }
-    }
-
-    /**
      * Check if a lot should be closed.
      */
     public function shouldCloseLot(BpMessageLot $lot): bool
@@ -582,25 +270,13 @@ class LotManager
 
     /**
      * Send all pending messages for a lot.
+     * Note: This method expects the lot to already have an externalLotId (created via createLotInApi).
      */
     public function sendLotMessages(BpMessageLot $lot): bool
     {
-        if (!$lot->isOpen()) {
-            $errorMessage = "Cannot send messages, lot status is '{$lot->getStatus()}' (expected CREATING or OPEN)";
-            $lot->setErrorMessage($errorMessage);
-            $this->entityManager->flush();
-
-            $this->logger->warning('BpMessage: '.$errorMessage, [
-                'lot_id' => $lot->getId(),
-                'status' => $lot->getStatus(),
-            ]);
-
-            return false;
-        }
-
-        // Verify lot has external ID (created in BpMessage API)
+        // Verify lot has external ID (should be created by processLot -> createLotInApi)
         if (empty($lot->getExternalLotId())) {
-            $errorMessage = 'Lot has no external ID - API lot creation may have failed';
+            $errorMessage = 'Lot has no external ID - lot must be created in API first';
             $lot->setErrorMessage($errorMessage);
             $lot->setStatus('FAILED');
             $this->entityManager->flush();
@@ -689,7 +365,7 @@ class LotManager
                 $success = false;
 
                 // Save error message to lot for user visibility
-                $errorMessage = "Batch {$batchIndex} failed: ".$result['error'];
+                $errorMessage = $result['error'];
                 $lot->setErrorMessage($errorMessage);
                 $lot->setStatus('FAILED');
 
@@ -779,7 +455,7 @@ class LotManager
 
         $lot->setStatus('FINISHED');
         $lot->setFinishedAt($now);
-        $lot->setErrorMessage("Finish API call failed: {$result['error']}");
+        $lot->setErrorMessage($result['error']);
         $this->entityManager->flush();
 
         // Force update with SQL to ensure the lot is marked as FINISHED
@@ -787,7 +463,7 @@ class LotManager
         $connection = $this->entityManager->getConnection();
         $connection->executeStatement(
             'UPDATE bpmessage_lot SET status = ?, finished_at = ?, error_message = ? WHERE id = ?',
-            ['FINISHED', $now->format('Y-m-d H:i:s'), "Finish API call failed: {$result['error']}", $lot->getId()]
+            ['FINISHED', $now->format('Y-m-d H:i:s'), $result['error'], $lot->getId()]
         );
 
         // Refresh to get latest data
@@ -802,10 +478,28 @@ class LotManager
     }
 
     /**
-     * Process a lot (send messages and finish).
+     * Process a lot (create in API, send messages, and finish).
+     *
+     * This method handles the complete lot lifecycle:
+     * 1. Create lot in BpMessage API (if not already created)
+     * 2. Send all pending messages to the API
+     * 3. Finalize the lot in the API
      */
     public function processLot(BpMessageLot $lot): bool
     {
+        // Step 1: Create lot in BpMessage API if not already created
+        if (empty($lot->getExternalLotId())) {
+            $this->logger->info('BpMessage: Creating lot in API before processing', [
+                'lot_id' => $lot->getId(),
+            ]);
+
+            if (!$this->createLotInApi($lot)) {
+                // createLotInApi already sets error message and status
+                return false;
+            }
+        }
+
+        // Step 2: Send all pending messages
         $success = $this->sendLotMessages($lot);
 
         if (!$success) {
@@ -828,7 +522,117 @@ class LotManager
             return false;
         }
 
+        // Step 3: Finalize the lot
         return $this->finishLot($lot);
+    }
+
+    /**
+     * Create a lot in the BpMessage API.
+     *
+     * @return bool True if creation succeeded, false otherwise
+     */
+    private function createLotInApi(BpMessageLot $lot): bool
+    {
+        // Get the saved payload
+        $lotData = $lot->getCreateLotPayload();
+
+        if (empty($lotData)) {
+            $errorMessage = 'No payload saved for lot creation';
+            $lot->setStatus('FAILED');
+            $lot->setErrorMessage($errorMessage);
+            $this->entityManager->flush();
+
+            $this->logger->error('BpMessage: '.$errorMessage, [
+                'lot_id' => $lot->getId(),
+            ]);
+
+            return false;
+        }
+
+        // Update dates to current time since lot creation was deferred
+        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
+        $now = new \DateTime('now', $localTimezone);
+        $timeWindow = $lot->getTimeWindow();
+        $endDate = (clone $now)->modify("+{$timeWindow} seconds");
+
+        // Update the payload with fresh dates
+        $lotData['startDate'] = $now->format('Y-m-d\TH:i:s.vP');
+        $lotData['endDate'] = $endDate->format('Y-m-d\TH:i:s.vP');
+
+        // Update lot entity dates
+        $lot->setStartDate($now);
+        $lot->setEndDate($endDate);
+        $lot->setCreateLotPayload($lotData);
+        $this->entityManager->flush();
+
+        // Set API base URL
+        $this->client->setBaseUrl($lot->getApiBaseUrl());
+
+        $this->logger->info('BpMessage: Creating lot in API', [
+            'lot_id'  => $lot->getId(),
+            'payload' => $lotData,
+        ]);
+
+        try {
+            $result = $this->client->createLot($lotData);
+
+            if (!$result['success']) {
+                $lot->setStatus('FAILED');
+                $lot->setErrorMessage($result['error']);
+                $this->entityManager->flush();
+
+                // Force SQL update
+                $connection = $this->entityManager->getConnection();
+                $connection->executeStatement(
+                    'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                    ['FAILED', $result['error'], $lot->getId()]
+                );
+
+                $this->logger->error('BpMessage: API CreateLot failed', [
+                    'lot_id' => $lot->getId(),
+                    'error'  => $result['error'],
+                ]);
+
+                return false;
+            }
+
+            // Update lot with external ID
+            $lot->setExternalLotId((string) $result['idLot']);
+            $this->entityManager->persist($lot);
+            $this->entityManager->flush();
+
+            // Force SQL update
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET externalLotId = ? WHERE id = ?',
+                [(string) $result['idLot'], $lot->getId()]
+            );
+
+            $this->logger->info('BpMessage: Lot created successfully in API', [
+                'lot_id'          => $lot->getId(),
+                'external_lot_id' => $lot->getExternalLotId(),
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            $lot->setStatus('FAILED');
+            $lot->setErrorMessage($e->getMessage());
+            $this->entityManager->flush();
+
+            // Force SQL update
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                ['FAILED', $e->getMessage(), $lot->getId()]
+            );
+
+            $this->logger->error('BpMessage: Exception creating lot in API', [
+                'lot_id' => $lot->getId(),
+                'error'  => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     /**

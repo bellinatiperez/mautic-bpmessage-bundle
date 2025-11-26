@@ -110,7 +110,7 @@ class BpMessageClient
             return [
                 'success' => false,
                 'idLot'   => null,
-                'error'   => "HTTP {$statusCode}: {$body}",
+                'error'   => $this->formatApiError($statusCode, $body),
             ];
         } catch (GuzzleException $e) {
             $this->logger->error('BpMessage: CreateLot failed', [
@@ -188,7 +188,7 @@ class BpMessageClient
 
             return [
                 'success' => false,
-                'error'   => "HTTP {$statusCode}: {$body}",
+                'error'   => $this->formatApiError($statusCode, $body),
             ];
         } catch (GuzzleException $e) {
             $this->logger->error('BpMessage: AddMessageToLot failed', [
@@ -255,7 +255,7 @@ class BpMessageClient
 
             return [
                 'success' => false,
-                'error'   => "HTTP {$statusCode}: {$body}",
+                'error'   => $this->formatApiError($statusCode, $body),
             ];
         } catch (GuzzleException $e) {
             $this->logger->error('BpMessage: FinishLot failed', [
@@ -280,6 +280,46 @@ class BpMessageClient
             'Accept'          => 'application/json',
             'X-Mautic-Source' => 'MauticBpMessageBundle',
         ];
+    }
+
+    /**
+     * Format API error response for display.
+     *
+     * Parses JSON response and extracts "messages" array, formatting them as:
+     * - Single: "Mensagem 1"
+     * - Two: "Mensagem 1 e Mensagem 2"
+     * - Multiple: "Mensagem 1, Mensagem 2 e Mensagem 3"
+     *
+     * @param int    $statusCode HTTP status code
+     * @param string $body       Response body (may be JSON)
+     *
+     * @return string Formatted error message
+     */
+    private function formatApiError(int $statusCode, string $body): string
+    {
+        // Try to decode JSON response
+        $decoded = json_decode($body, true);
+
+        if (is_array($decoded) && !empty($decoded['messages']) && is_array($decoded['messages'])) {
+            $messages = $decoded['messages'];
+            $count    = count($messages);
+
+            if (1 === $count) {
+                return $messages[0];
+            }
+
+            if (2 === $count) {
+                return $messages[0].' e '.$messages[1];
+            }
+
+            // 3+ messages: "msg1, msg2, msg3 e msg4"
+            $lastMessage = array_pop($messages);
+
+            return implode(', ', $messages).' e '.$lastMessage;
+        }
+
+        // Fallback to raw response
+        return "HTTP {$statusCode}: {$body}";
     }
 
     /**
@@ -352,7 +392,7 @@ class BpMessageClient
             return [
                 'success'    => false,
                 'idLotEmail' => null,
-                'error'      => "HTTP {$statusCode}: {$body}",
+                'error'      => $this->formatApiError($statusCode, $body),
             ];
         } catch (GuzzleException $e) {
             $this->logger->error('BpMessage: CreateEmailLot failed', [
@@ -429,7 +469,7 @@ class BpMessageClient
 
             return [
                 'success' => false,
-                'error'   => "HTTP {$statusCode}: {$body}",
+                'error'   => $this->formatApiError($statusCode, $body),
             ];
         } catch (GuzzleException $e) {
             $this->logger->error('BpMessage: AddEmailToLot failed', [
@@ -495,7 +535,7 @@ class BpMessageClient
 
             return [
                 'success' => false,
-                'error'   => "HTTP {$statusCode}: {$body}",
+                'error'   => $this->formatApiError($statusCode, $body),
             ];
         } catch (GuzzleException $e) {
             $this->logger->error('BpMessage: FinishEmailLot failed', [
