@@ -597,7 +597,7 @@ class EmailLotManager
             // Force SQL update
             $connection = $this->entityManager->getConnection();
             $connection->executeStatement(
-                'UPDATE bpmessage_lot SET externalLotId = ? WHERE id = ?',
+                'UPDATE bpmessage_lot SET external_lot_id = ? WHERE id = ?',
                 [(string) $result['idLotEmail'], $lot->getId()]
             );
 
