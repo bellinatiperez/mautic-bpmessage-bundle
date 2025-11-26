@@ -9,9 +9,10 @@
         <a href="{{ path('mautic_bpmessage_lot_index') }}"
            class="btn btn-default btn-sm"
            data-toggle="ajax">
-            <i class="fa fa-arrow-left"></i> {{ 'mautic.core.back'|trans }}
+            <i class="fa fa-arrow-left"></i> {{ 'mautic.bpmessage.lot.back'|trans }}
         </a>
-        {% if lot.status in ['FAILED', 'FINISHED'] and statistics.failed > 0 %}
+        {# Reprocessar: apenas lotes FAILED ou CREATING sem externalLotId - NUNCA para FINISHED #}
+        {% if lot.status == 'FAILED' or (lot.status == 'CREATING' and not lot.externalLotId) %}
             <a href="{{ path('mautic_bpmessage_lot_reprocess', {'id': lot.id}) }}"
                class="btn btn-warning btn-sm"
                data-toggle="ajax"
@@ -19,6 +20,17 @@
                 <i class="fa fa-refresh"></i> {{ 'mautic.bpmessage.lot.reprocess'|trans }}
             </a>
         {% endif %}
+        {# Processar Agora: lotes prontos para enviar (OPEN ou CREATING com externalLotId) #}
+        {% if lot.status == 'OPEN' or (lot.status == 'CREATING' and lot.externalLotId) %}
+            <a href="{{ path('mautic_bpmessage_lot_process_single', {'id': lot.id}) }}"
+               class="btn btn-primary btn-sm"
+               data-toggle="ajax"
+               data-method="POST"
+               onclick="return confirm('{{ 'mautic.bpmessage.lot.process.confirm'|trans }}');">
+                <i class="fa fa-play"></i> {{ 'mautic.bpmessage.lot.process.single'|trans }}
+            </a>
+        {% endif %}
+        {# Cancelar: apenas lotes em andamento #}
         {% if lot.status in ['CREATING', 'OPEN', 'SENDING'] %}
             <a href="{{ path('mautic_bpmessage_lot_cancel', {'id': lot.id}) }}"
                class="btn btn-danger btn-sm"
@@ -38,22 +50,6 @@
         <div class="alert alert-danger">
             <h4><i class="fa fa-exclamation-triangle"></i> {{ 'mautic.core.error'|trans }}</h4>
             <p><strong>{{ lot.errorMessage }}</strong></p>
-            {% if lot.status in ['FAILED', 'FINISHED'] and statistics.failed > 0 %}
-                <hr>
-                <p>
-                    <a href="{{ path('mautic_bpmessage_lot_reprocess', {'id': lot.id}) }}"
-                       class="btn btn-warning"
-                       data-toggle="ajax"
-                       data-method="POST">
-                        <i class="fa fa-refresh"></i> {{ 'mautic.bpmessage.lot.reprocess'|trans }}
-                    </a>
-                </p>
-            {% endif %}
-        </div>
-    {% elseif statistics.failed > 0 %}
-        <div class="alert alert-warning">
-            <h4><i class="fa fa-warning"></i> {{ 'mautic.core.warning'|trans }}</h4>
-            <p>{{ statistics.failed }} message(s) failed to send. Check the messages table below for details.</p>
         </div>
     {% endif %}
 
@@ -171,74 +167,6 @@
         </div>
     </div>
 
-    {# Failed Messages Section #}
-    {% if statistics.failed > 0 %}
-    <div class="panel panel-danger">
-        <div class="panel-heading">
-            <h3 class="panel-title">
-                <i class="fa fa-exclamation-triangle"></i> {{ 'mautic.bpmessage.lot.failed_messages'|trans }} ({{ statistics.failed }})
-            </h3>
-        </div>
-        <div class="panel-body">
-            <div class="table-responsive">
-                <table class="table table-hover table-bordered table-sm">
-                    <thead>
-                        <tr>
-                            <th style="width: 80px;">{{ 'mautic.core.id'|trans }}</th>
-                            <th style="width: 200px;">{{ 'mautic.lead.lead'|trans }}</th>
-                            <th style="width: 100px;">{{ 'mautic.bpmessage.retry_count'|trans }}</th>
-                            <th>{{ 'mautic.bpmessage.error_message'|trans }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for message in messages %}
-                            {% if message.status == 'FAILED' %}
-                            {% set lead = message.lead %}
-                            <tr>
-                                <td><code>#{{ message.id }}</code></td>
-                                <td>
-                                    <a href="{{ path('mautic_contact_action', {'objectAction': 'view', 'objectId': lead.id}) }}"
-                                       target="_blank"
-                                       class="text-danger">
-                                        <i class="fa fa-user"></i> {{ lead.firstname }} {{ lead.lastname }}
-                                    </a>
-                                    <br>
-                                    <small class="text-muted">{{ lead.email }}</small>
-                                </td>
-                                <td class="text-center">
-                                    <span class="badge badge-danger">{{ message.retryCount }}</span>
-                                </td>
-                                <td>
-                                    {% if message.errorMessage %}
-                                        <div class="alert alert-danger mb-0" style="padding: 8px;">
-                                            <i class="fa fa-times-circle"></i>
-                                            <strong>{{ message.errorMessage|slice(0, 200) }}</strong>
-                                            {% if message.errorMessage|length > 200 %}
-                                                <a href="#" onclick="alert('{{ message.errorMessage|escape('js') }}'); return false;" class="text-danger">
-                                                    <i class="fa fa-plus-circle"></i> Ver completo
-                                                </a>
-                                            {% endif %}
-                                        </div>
-                                    {% else %}
-                                        <span class="text-muted">{{ 'mautic.bpmessage.no_error_message'|trans }}</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <div class="alert alert-info mt-3 mb-0">
-                <i class="fa fa-info-circle"></i>
-                <strong>{{ 'mautic.bpmessage.fix_and_retry'|trans }}</strong>
-                <br>
-                {{ 'mautic.bpmessage.fix_and_retry_help'|trans({'%id%': lot.id}) }}
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
     {# Messages List #}
     <div class="panel panel-default">
         <div class="panel-heading">
@@ -256,8 +184,13 @@
                             <tr>
                                 <th>{{ 'mautic.core.id'|trans }}</th>
                                 <th>{{ 'mautic.lead.lead'|trans }}</th>
-                                <th>{{ 'mautic.core.email'|trans }}</th>
+                                {% if lot.isEmailLot %}
+                                    <th>{{ 'mautic.core.email'|trans }}</th>
+                                {% else %}
+                                    <th>{{ 'mautic.bpmessage.phone'|trans }}</th>
+                                {% endif %}
                                 <th>{{ 'mautic.core.status'|trans }}</th>
+                                <th>{{ 'mautic.bpmessage.error_message'|trans }}</th>
                                 <th>{{ 'mautic.bpmessage.retry_count'|trans }}</th>
                                 <th>{{ 'mautic.core.date.added'|trans }}</th>
                             </tr>
@@ -265,6 +198,7 @@
                         <tbody>
                             {% for message in messages %}
                                 {% set lead = message.lead %}
+                                {% set payload = message.payloadArray %}
                                 <tr>
                                     <td>#{{ message.id }}</td>
                                     <td>
@@ -273,7 +207,19 @@
                                             {{ lead.firstname }} {{ lead.lastname }}
                                         </a>
                                     </td>
-                                    <td>{{ lead.email }}</td>
+                                    <td>
+                                        {% if lot.isEmailLot %}
+                                            {{ lead.email }}
+                                        {% else %}
+                                            {% if payload.areaCode is defined and payload.phone is defined %}
+                                                ({{ payload.areaCode }}) {{ payload.phone }}
+                                            {% elseif payload.phone is defined %}
+                                                {{ payload.phone }}
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if message.status == 'PENDING' %}
                                             <span class="label label-warning">{{ 'mautic.bpmessage.message.status.pending'|trans }}</span>
@@ -282,10 +228,14 @@
                                         {% elseif message.status == 'FAILED' %}
                                             <span class="label label-danger">{{ 'mautic.bpmessage.message.status.failed'|trans }}</span>
                                         {% endif %}
+                                    </td>
+                                    <td>
                                         {% if message.errorMessage %}
-                                            <i class="fa fa-info-circle text-danger"
-                                               title="{{ message.errorMessage }}"
-                                               data-toggle="tooltip"></i>
+                                            <span class="text-danger" title="{{ message.errorMessage }}" data-toggle="tooltip">
+                                                {{ message.errorMessage|slice(0, 50) }}{% if message.errorMessage|length > 50 %}...{% endif %}
+                                            </span>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
                                         {% endif %}
                                     </td>
                                     <td>

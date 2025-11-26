@@ -43,6 +43,9 @@ class BpMessageModel
     /**
      * Send a message for a lead (called from campaign action).
      *
+     * Always registers the contact to the lot queue.
+     * If the contact has no phone number, marks as FAILED in the queue only (not failing the campaign event).
+     *
      * @param array $config Campaign action configuration
      *
      * @return array ['success' => bool, 'message' => string]
@@ -64,23 +67,8 @@ class BpMessageModel
             $config['default_batch_size']  = $this->getDefaultBatchSize();
             $config['default_time_window'] = $this->getDefaultTimeWindow();
 
-            // Validate configuration
+            // Validate configuration (not lead-specific validation)
             $this->validateConfig($config);
-
-            // Validate lead
-            $validation = $this->messageMapper->validateLead($lead, $config);
-            if (!$validation['valid']) {
-                $errorMsg = implode('; ', $validation['errors']);
-                $this->logger->warning('BpMessage: Lead validation failed', [
-                    'lead_id' => $lead->getId(),
-                    'errors'  => $errorMsg,
-                ]);
-
-                return [
-                    'success' => false,
-                    'message' => "Lead validation failed: {$errorMsg}",
-                ];
-            }
 
             // Process lot_data with token replacement (using first lead as reference)
             if (!empty($config['lot_data'])) {
@@ -93,18 +81,48 @@ class BpMessageModel
             // Map lead to message format
             $messageData = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
 
-            // Queue message
-            $this->lotManager->queueMessage($lot, $lead, $messageData);
+            // Check if phone is present in the message data
+            // Phone is extracted from phone_pattern field
+            $hasPhone = !empty($messageData['phone']) || !empty($messageData['areaCode']);
 
-            $this->logger->info('BpMessage: Message queued successfully', [
+            if ($hasPhone) {
+                // Queue message normally (PENDING status)
+                $this->lotManager->queueMessage($lot, $lead, $messageData);
+
+                $this->logger->info('BpMessage: Message queued successfully', [
+                    'lead_id'     => $lead->getId(),
+                    'lot_id'      => $lot->getId(),
+                    'campaign_id' => $campaign->getId(),
+                ]);
+
+                return [
+                    'success' => true,
+                    'message' => 'Message queued successfully',
+                ];
+            }
+
+            // No phone - queue as FAILED but still return success to campaign
+            // This ensures the contact is registered in the lot but won't be sent to BpMessage
+            $errorMessage = 'Contato sem telefone';
+
+            $this->lotManager->queueMessageWithStatus(
+                $lot,
+                $lead,
+                $messageData,
+                'FAILED',
+                $errorMessage
+            );
+
+            $this->logger->warning('BpMessage: Contact queued as FAILED - no phone number', [
                 'lead_id'     => $lead->getId(),
                 'lot_id'      => $lot->getId(),
                 'campaign_id' => $campaign->getId(),
             ]);
 
+            // Return success to campaign - contact is registered but marked as failed in queue
             return [
                 'success' => true,
-                'message' => 'Message queued successfully',
+                'message' => 'Contact registered (no phone - marked as failed)',
             ];
         } catch (\Exception $e) {
             $this->logger->error('BpMessage: Failed to send message', [
@@ -354,18 +372,21 @@ class BpMessageModel
             }
         }
 
-        // Validate service type
-        $serviceType = (int) ($config['service_type'] ?? 2);
-        if (!in_array($serviceType, [1, 2, 3])) {
-            throw new \InvalidArgumentException('Invalid service type');
+        // Validate service type (API: 1=WhatsApp, 2=SMS, 3=Email, 4=RCS)
+        // Note: Email (3) uses a separate model, so only 1, 2, 4 are valid here
+        $serviceType = (int) ($config['service_type'] ?? 1); // Default: WhatsApp (1)
+        if (!in_array($serviceType, [1, 2, 4])) {
+            throw new \InvalidArgumentException("Invalid service type: {$serviceType}. Valid types are: 1=WhatsApp, 2=SMS, 4=RCS");
         }
 
         // Validate service type specific fields
+        // WhatsApp (1) and SMS (2) require message_text
         if (in_array($serviceType, [1, 2]) && empty($config['message_text'])) {
             throw new \InvalidArgumentException('Message text is required for SMS/WhatsApp');
         }
 
-        if (3 === $serviceType && empty($config['id_template'])) {
+        // RCS (4) requires id_template
+        if (4 === $serviceType && empty($config['id_template'])) {
             throw new \InvalidArgumentException('Template ID is required for RCS');
         }
     }

@@ -133,6 +133,8 @@ class EmailTemplateMessageMapper
 
     /**
      * Get to address (from lead or override).
+     *
+     * Returns empty string if no email is available (caller should handle this case).
      */
     private function getToAddress(Lead $lead, array $config, array $contactValues): string
     {
@@ -144,13 +146,8 @@ class EmailTemplateMessageMapper
             }
         }
 
-        // Use lead email
-        $email = $lead->getEmail();
-        if (empty($email)) {
-            throw new \InvalidArgumentException("Lead #{$lead->getId()} has no email address");
-        }
-
-        return $email;
+        // Use lead email (return empty string if not available)
+        return $lead->getEmail() ?? '';
     }
 
     /**
@@ -353,6 +350,9 @@ class EmailTemplateMessageMapper
     /**
      * Validate that a lead has all required fields for BpMessage email template.
      *
+     * Note: Email validation is NOT done here. Contacts without email are registered
+     * in the lot queue with FAILED status (handled by BpMessageEmailTemplateModel).
+     *
      * @return array ['valid' => bool, 'errors' => string[]]
      */
     public function validateLead(Lead $lead, array $config): array
@@ -364,13 +364,8 @@ class EmailTemplateMessageMapper
             $errors[] = 'Email template is required';
         }
 
-        // Check if lead has email (unless overridden)
-        if (empty($config['email_to'])) {
-            $email = $lead->getEmail();
-            if (empty($email)) {
-                $errors[] = 'Lead email address is required';
-            }
-        }
+        // Note: Email validation removed - contacts without email are now registered
+        // in the lot queue with FAILED status instead of failing validation
 
         return [
             'valid'  => empty($errors),

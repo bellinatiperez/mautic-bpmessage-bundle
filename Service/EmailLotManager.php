@@ -312,6 +312,23 @@ class EmailLotManager
      */
     public function queueEmail(BpMessageLot $lot, Lead $lead, array $emailData): BpMessageQueue
     {
+        return $this->queueEmailWithStatus($lot, $lead, $emailData, 'PENDING');
+    }
+
+    /**
+     * Queue an email for a lot with a specific status.
+     * Use this to register contacts that should be marked as FAILED immediately (e.g., missing email).
+     *
+     * @param string      $status       Status to set (PENDING, FAILED)
+     * @param string|null $errorMessage Error message if status is FAILED
+     */
+    public function queueEmailWithStatus(
+        BpMessageLot $lot,
+        Lead $lead,
+        array $emailData,
+        string $status = 'PENDING',
+        ?string $errorMessage = null
+    ): BpMessageQueue {
         // Check if lead is already queued
         $qb = $this->entityManager->createQueryBuilder();
         $qb->select('COUNT(q.id)')
@@ -336,7 +353,11 @@ class EmailLotManager
         $queue->setLot($lot);
         $queue->setLead($lead);
         $queue->setPayloadArray($emailData);
-        $queue->setStatus('PENDING');
+        $queue->setStatus($status);
+
+        if (null !== $errorMessage) {
+            $queue->setErrorMessage($errorMessage);
+        }
 
         $this->entityManager->persist($queue);
 
@@ -359,6 +380,7 @@ class EmailLotManager
             'lot_id'         => $lot->getId(),
             'lead_id'        => $lead->getId(),
             'queue_id'       => $queue->getId(),
+            'status'         => $status,
             'messages_count' => $lot->getMessagesCount(),
         ]);
 

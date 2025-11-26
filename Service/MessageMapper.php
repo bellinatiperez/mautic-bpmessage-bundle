@@ -37,8 +37,8 @@ class MessageMapper
             'control' => $config['control'] ?? true,
         ];
 
-        // Add service type
-        $serviceType              = (int) ($config['service_type'] ?? 2); // Default: WhatsApp
+        // Add service type (API: 1=WhatsApp, 2=SMS, 3=Email, 4=RCS)
+        $serviceType              = (int) ($config['service_type'] ?? 1); // Default: WhatsApp (1)
         $message['idServiceType'] = $serviceType;
 
         // Add message text for SMS/WhatsApp
@@ -47,13 +47,19 @@ class MessageMapper
             $message['text'] = $this->processTokens($text, $lead);
         }
 
-        // Add template for RCS
-        if (3 === $serviceType) { // RCS
+        // Add template for RCS (4) - RCS uses templates, not free text
+        if (4 === $serviceType) { // RCS
             if (empty($config['id_template'])) {
                 throw new \InvalidArgumentException('idTemplate is required for RCS messages');
             }
 
             $message['idTemplate'] = $config['id_template'];
+        }
+
+        // Process phone_pattern to extract areaCode and phone
+        $phoneData = $this->processPhonePattern($lead, $config);
+        if (!empty($phoneData)) {
+            $message = array_merge($message, $phoneData);
         }
 
         // Process additional_data and merge into message (includes contract, cpf, phone, etc)
@@ -72,11 +78,70 @@ class MessageMapper
     }
 
     /**
+     * Process phone_pattern field to extract areaCode and phone.
+     *
+     * The pattern should be like: "({contactfield=dddmobile}) {contactfield=mobile}"
+     * - What's inside parentheses becomes areaCode (numbers only)
+     * - What's outside parentheses becomes phone (numbers only)
+     *
+     * @return array ['areaCode' => string, 'phone' => string] or empty array if no pattern
+     */
+    private function processPhonePattern(Lead $lead, array $config): array
+    {
+        if (empty($config['phone_pattern'])) {
+            return [];
+        }
+
+        $pattern = $config['phone_pattern'];
+
+        // Get contact values for token replacement
+        $contactValues = $this->getContactValues($lead);
+
+        // Replace tokens with actual values
+        $processedPattern = rawurldecode(TokenHelper::findLeadTokens($pattern, $contactValues, true));
+
+        $this->logger->debug('BpMessage: Processing phone pattern', [
+            'lead_id'  => $lead->getId(),
+            'pattern'  => $pattern,
+            'resolved' => $processedPattern,
+        ]);
+
+        // Extract area code from parentheses: (XX) -> XX
+        $areaCode = '';
+        if (preg_match('/\(([^)]+)\)/', $processedPattern, $matches)) {
+            // Remove everything except numbers
+            $areaCode = preg_replace('/[^0-9]/', '', $matches[1]);
+        }
+
+        // Extract phone - remove the parentheses part and keep only numbers from the rest
+        $phoneWithoutAreaCode = preg_replace('/\([^)]*\)/', '', $processedPattern);
+        $phone                = preg_replace('/[^0-9]/', '', $phoneWithoutAreaCode);
+
+        $this->logger->debug('BpMessage: Phone pattern extracted', [
+            'lead_id'  => $lead->getId(),
+            'areaCode' => $areaCode,
+            'phone'    => $phone,
+        ]);
+
+        // Only return if we have valid data
+        if (!empty($areaCode) || !empty($phone)) {
+            return [
+                'areaCode' => $areaCode,
+                'phone'    => $phone,
+            ];
+        }
+
+        return [];
+    }
+
+    /**
      * Extract phone number and area code from lead.
      *
      * @return array ['areaCode' => string, 'phone' => string]
      *
      * @throws \InvalidArgumentException if phone is invalid
+     *
+     * @deprecated Use processPhonePattern instead with phone_pattern config field
      */
     private function extractPhoneData(Lead $lead, array $config): array
     {
@@ -367,14 +432,16 @@ class MessageMapper
     {
         $errors = [];
 
-        // Check service type specific requirements
-        $serviceType = (int) ($config['service_type'] ?? 2);
+        // Check service type specific requirements (API: 1=WhatsApp, 2=SMS, 3=Email, 4=RCS)
+        $serviceType = (int) ($config['service_type'] ?? 1); // Default: WhatsApp (1)
 
+        // WhatsApp (1) and SMS (2) require message_text
         if (in_array($serviceType, [1, 2]) && empty($config['message_text'])) {
             $errors[] = 'Message text is required for SMS/WhatsApp';
         }
 
-        if (3 === $serviceType && empty($config['id_template'])) {
+        // RCS (4) requires id_template
+        if (4 === $serviceType && empty($config['id_template'])) {
             $errors[] = 'Template ID is required for RCS';
         }
 

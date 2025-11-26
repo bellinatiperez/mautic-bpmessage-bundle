@@ -9,7 +9,9 @@ use Mautic\CoreBundle\Service\FlashBag;
 use Mautic\CoreBundle\Translation\Translator;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
+use MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailModel;
 use MauticPlugin\MauticBpMessageBundle\Model\BpMessageModel;
+use MauticPlugin\MauticBpMessageBundle\Service\LotManager;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -28,7 +30,9 @@ class BatchController
     private FlashBag $flashBag;
     private Environment $twig;
     private BpMessageModel $bpMessageModel;
+    private BpMessageEmailModel $bpMessageEmailModel;
     private UrlGeneratorInterface $urlGenerator;
+    private LotManager $lotManager;
 
     public function __construct(
         ManagerRegistry $doctrine,
@@ -36,14 +40,18 @@ class BatchController
         FlashBag $flashBag,
         Environment $twig,
         BpMessageModel $bpMessageModel,
+        BpMessageEmailModel $bpMessageEmailModel,
         UrlGeneratorInterface $urlGenerator,
+        LotManager $lotManager,
     ) {
-        $this->doctrine       = $doctrine;
-        $this->translator     = $translator;
-        $this->flashBag       = $flashBag;
-        $this->twig           = $twig;
-        $this->bpMessageModel = $bpMessageModel;
-        $this->urlGenerator   = $urlGenerator;
+        $this->doctrine            = $doctrine;
+        $this->translator          = $translator;
+        $this->flashBag            = $flashBag;
+        $this->twig                = $twig;
+        $this->bpMessageModel      = $bpMessageModel;
+        $this->bpMessageEmailModel = $bpMessageEmailModel;
+        $this->urlGenerator        = $urlGenerator;
+        $this->lotManager          = $lotManager;
     }
 
     /**
@@ -209,38 +217,309 @@ class BatchController
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
         }
 
-        // Reset lot and messages to PENDING
-        $em->createQueryBuilder()
-            ->update(BpMessageQueue::class, 'q')
-            ->set('q.status', ':pending')
-            ->set('q.retryCount', '0')
-            ->set('q.errorMessage', 'NULL')
-            ->where('q.lot = :lot')
-            ->andWhere('q.status IN (:statuses)')
-            ->setParameter('pending', 'PENDING')
-            ->setParameter('lot', $lot)
-            ->setParameter('statuses', ['FAILED'])
-            ->getQuery()
-            ->execute();
+        try {
+            // Reset lot and messages to PENDING
+            $em->createQueryBuilder()
+                ->update(BpMessageQueue::class, 'q')
+                ->set('q.status', ':pending')
+                ->set('q.retryCount', '0')
+                ->set('q.errorMessage', 'NULL')
+                ->where('q.lot = :lot')
+                ->andWhere('q.status IN (:statuses)')
+                ->setParameter('pending', 'PENDING')
+                ->setParameter('lot', $lot)
+                ->setParameter('statuses', ['FAILED'])
+                ->getQuery()
+                ->execute();
 
-        // Reset lot status
-        if ('FAILED' === $lot->getStatus() || 'FINISHED' === $lot->getStatus()) {
-            $lot->setStatus('OPEN');
-            $lot->setErrorMessage(null);
-            $lot->setFinishedAt(null);
+            // Check if lot dates are expired - update them for valid range
+            // This is critical for CREATING lots that need to call BpMessage API again
+            // Using America/Sao_Paulo timezone to match LotManager behavior
+            $localTimezone = new \DateTimeZone('America/Sao_Paulo');
+            $now = new \DateTime('now', $localTimezone);
+
+            // Convert lot end date to local timezone for proper comparison
+            $lotEndDate = clone $lot->getEndDate();
+            $lotEndDate->setTimezone($localTimezone);
+
+            $datesUpdated = false;
+            // Always update dates for CREATING lots to ensure they're in the future
+            if ($lotEndDate < $now) {
+                $timeWindow = $lot->getTimeWindow(); // in seconds
+                $newStartDate = new \DateTime('now', $localTimezone);
+                $newEndDate = (clone $newStartDate)->modify("+{$timeWindow} seconds");
+
+                $lot->setStartDate($newStartDate);
+                $lot->setEndDate($newEndDate);
+
+                // Also update the createLotPayload with new dates if it exists
+                $payload = $lot->getCreateLotPayload();
+                if ($payload) {
+                    $payload['startDate'] = $newStartDate->format('Y-m-d\TH:i:s.vP');
+                    $payload['endDate'] = $newEndDate->format('Y-m-d\TH:i:s.vP');
+                    $lot->setCreateLotPayload($payload);
+                }
+
+                $datesUpdated = true;
+            }
+
+            // Reset lot status
+            // If lot has no externalLotId, it needs to go back to CREATING to call API
+            // If lot has externalLotId, it can go to OPEN to just send messages
+            $needsApiRegistration = false;
+            if ('FAILED' === $lot->getStatus() || 'FINISHED' === $lot->getStatus() || 'CREATING' === $lot->getStatus() || 'FAILED_CREATION' === $lot->getStatus()) {
+                if (empty($lot->getExternalLotId())) {
+                    $lot->setStatus('CREATING');
+                    $needsApiRegistration = true;
+                } else {
+                    $lot->setStatus('OPEN');
+                }
+                $lot->setErrorMessage(null);
+                $lot->setFinishedAt(null);
+            }
+
+            $em->persist($lot);
+            $em->flush();
+
+            // Force update with SQL to ensure persistence
+            $payload = $lot->getCreateLotPayload();
+            $connection = $em->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, start_date = ?, end_date = ?, create_lot_payload = ?, error_message = NULL, finished_at = NULL WHERE id = ?',
+                [
+                    $lot->getStatus(),
+                    $lot->getStartDate()->format('Y-m-d H:i:s'),
+                    $lot->getEndDate()->format('Y-m-d H:i:s'),
+                    $payload ? json_encode($payload) : null,
+                    $lot->getId(),
+                ]
+            );
+
+            // For CREATING lots, immediately try to register in the API
+            if ($needsApiRegistration) {
+                $em->refresh($lot);
+                $registered = $this->lotManager->registerLotInApi($lot);
+
+                if (!$registered) {
+                    // Error already saved by registerLotInApi
+                    $em->refresh($lot);
+
+                    if ($request->isXmlHttpRequest()) {
+                        return new JsonResponse([
+                            'success' => false,
+                            'message' => $lot->getErrorMessage() ?: 'Failed to register lot in API',
+                        ], 400);
+                    }
+
+                    $this->flashBag->add(
+                        $lot->getErrorMessage() ?: 'Failed to register lot in API',
+                        FlashBag::LEVEL_ERROR
+                    );
+
+                    return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+                }
+            }
+
+            if ($request->isXmlHttpRequest()) {
+                return new JsonResponse([
+                    'success' => true,
+                    'message' => $this->translator->trans('mautic.bpmessage.lot.reprocessed'),
+                ]);
+            }
+
+            $this->flashBag->add('mautic.bpmessage.lot.reprocessed', FlashBag::LEVEL_SUCCESS);
+
+        } catch (\Exception $e) {
+            // Save the error to the lot
+            $errorMessage = 'Exception during reprocess: '.$e->getMessage();
+            $lot->setErrorMessage($errorMessage);
+            $lot->setStatus('FAILED');
+            $em->persist($lot);
+            $em->flush();
+
+            // Force SQL update
+            $connection = $em->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                ['FAILED', $errorMessage, $id]
+            );
+
+            if ($request->isXmlHttpRequest()) {
+                return new JsonResponse([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 500);
+            }
+
+            $this->flashBag->add($e->getMessage(), FlashBag::LEVEL_ERROR);
         }
 
-        $em->persist($lot);
-        $em->flush();
+        return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+    }
 
-        if ($request->isXmlHttpRequest()) {
-            return new JsonResponse([
-                'success' => true,
-                'message' => $this->translator->trans('mautic.bpmessage.lot.reprocessed'),
-            ]);
+    /**
+     * Process a specific lot (force close and send).
+     */
+    public function processLotAction(Request $request, int $id): Response
+    {
+        $em = $this->doctrine->getManager();
+
+        $lot = $em->getRepository(BpMessageLot::class)->find($id);
+
+        if (!$lot) {
+            if ($request->isXmlHttpRequest()) {
+                return new JsonResponse(['success' => false, 'message' => 'Lot not found'], 404);
+            }
+
+            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', FlashBag::LEVEL_ERROR);
+
+            return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
         }
 
-        $this->flashBag->add('mautic.bpmessage.lot.reprocessed', FlashBag::LEVEL_SUCCESS);
+        // Only allow processing lots that are OPEN or CREATING
+        if (!in_array($lot->getStatus(), ['CREATING', 'OPEN'])) {
+            if ($request->isXmlHttpRequest()) {
+                return new JsonResponse([
+                    'success' => false,
+                    'message' => $this->translator->trans('mautic.bpmessage.lot.error.cannot_process'),
+                ], 400);
+            }
+
+            $this->flashBag->add('mautic.bpmessage.lot.error.cannot_process', FlashBag::LEVEL_ERROR);
+
+            return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+        }
+
+        // If lot dates are expired, update them before processing
+        // This is important for CREATING lots that failed previously and need valid date ranges
+        // Using America/Sao_Paulo timezone to match LotManager behavior
+        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
+        $now = new \DateTime('now', $localTimezone);
+
+        // Convert lot end date to local timezone for proper comparison
+        $lotEndDate = clone $lot->getEndDate();
+        $lotEndDate->setTimezone($localTimezone);
+
+        if ($lotEndDate < $now) {
+            $timeWindow = $lot->getTimeWindow(); // in seconds
+            $newStartDate = new \DateTime('now', $localTimezone);
+            $newEndDate = (clone $newStartDate)->modify("+{$timeWindow} seconds");
+
+            $lot->setStartDate($newStartDate);
+            $lot->setEndDate($newEndDate);
+
+            // Also update the createLotPayload with new dates if it exists
+            $payload = $lot->getCreateLotPayload();
+            if ($payload) {
+                $payload['startDate'] = $newStartDate->format('Y-m-d\TH:i:s.vP');
+                $payload['endDate'] = $newEndDate->format('Y-m-d\TH:i:s.vP');
+                $lot->setCreateLotPayload($payload);
+            }
+
+            $em->persist($lot);
+            $em->flush();
+
+            // Force update with SQL to ensure persistence
+            $connection = $em->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET start_date = ?, end_date = ?, create_lot_payload = ? WHERE id = ?',
+                [
+                    $newStartDate->format('Y-m-d H:i:s'),
+                    $newEndDate->format('Y-m-d H:i:s'),
+                    $payload ? json_encode($payload) : null,
+                    $lot->getId(),
+                ]
+            );
+
+            // Refresh lot to get updated data
+            $em->refresh($lot);
+        }
+
+        try {
+            // For CREATING lots without externalLotId, first register in API
+            if ('CREATING' === $lot->getStatus() && empty($lot->getExternalLotId())) {
+                $registered = $this->lotManager->registerLotInApi($lot);
+
+                if (!$registered) {
+                    // Error is already saved to lot by registerLotInApi
+                    $em->refresh($lot);
+
+                    if ($request->isXmlHttpRequest()) {
+                        return new JsonResponse([
+                            'success' => false,
+                            'message' => $lot->getErrorMessage() ?: $this->translator->trans('mautic.bpmessage.lot.process.failed'),
+                        ], 400);
+                    }
+
+                    $this->flashBag->add(
+                        $lot->getErrorMessage() ?: 'mautic.bpmessage.lot.process.failed',
+                        FlashBag::LEVEL_ERROR
+                    );
+
+                    return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
+                }
+
+                // Refresh lot to get updated status (should be OPEN now)
+                $em->refresh($lot);
+            }
+
+            // Use forceCloseLot which processes and finishes the lot
+            // Check if this is an email lot (idQuotaSettings = 0) or SMS lot (idQuotaSettings > 0)
+            if ($lot->isEmailLot()) {
+                $success = $this->bpMessageEmailModel->forceCloseLot($id);
+            } else {
+                $success = $this->bpMessageModel->forceCloseLot($id);
+            }
+
+            if ($success) {
+                if ($request->isXmlHttpRequest()) {
+                    return new JsonResponse([
+                        'success' => true,
+                        'message' => $this->translator->trans('mautic.bpmessage.lot.process.success'),
+                    ]);
+                }
+
+                $this->flashBag->add('mautic.bpmessage.lot.process.success', FlashBag::LEVEL_SUCCESS);
+            } else {
+                // Refresh lot to get error message
+                $em->refresh($lot);
+
+                if ($request->isXmlHttpRequest()) {
+                    return new JsonResponse([
+                        'success' => false,
+                        'message' => $lot->getErrorMessage() ?: $this->translator->trans('mautic.bpmessage.lot.process.failed'),
+                    ]);
+                }
+
+                $this->flashBag->add(
+                    $lot->getErrorMessage() ?: 'mautic.bpmessage.lot.process.failed',
+                    FlashBag::LEVEL_ERROR
+                );
+            }
+        } catch (\Exception $e) {
+            // Save the error to the lot so it's visible in the lot details
+            $errorMessage = 'Exception: '.$e->getMessage();
+            $lot->setErrorMessage($errorMessage);
+            $lot->setStatus('FAILED');
+            $em->persist($lot);
+            $em->flush();
+
+            // Also force update via SQL to ensure persistence
+            $connection = $em->getConnection();
+            $connection->executeStatement(
+                'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
+                ['FAILED', $errorMessage, $id]
+            );
+
+            if ($request->isXmlHttpRequest()) {
+                return new JsonResponse([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 500);
+            }
+
+            $this->flashBag->add($e->getMessage(), FlashBag::LEVEL_ERROR);
+        }
 
         return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
     }

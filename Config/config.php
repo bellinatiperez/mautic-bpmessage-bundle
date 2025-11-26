@@ -30,6 +30,11 @@ return [
                 'controller'   => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::cancelAction',
                 'requirements' => ['id' => '\\d+'],
             ],
+            'mautic_bpmessage_lot_process_single' => [
+                'path'         => '/bpmessage/lot/{id}/process',
+                'controller'   => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::processLotAction',
+                'requirements' => ['id' => '\\d+'],
+            ],
             'mautic_bpmessage_lot_process' => [
                 'path'       => '/bpmessage/lots/process',
                 'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::processAction',
@@ -182,7 +187,9 @@ return [
                     'mautic.core.service.flashbag',
                     'twig',
                     'mautic.bpmessage.model.bpmessage',
+                    'mautic.bpmessage.model.email',
                     'router',
+                    'mautic.bpmessage.service.lot_manager',
                 ],
                 'public' => true,
                 'tags'   => [

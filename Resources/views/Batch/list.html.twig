@@ -25,15 +25,15 @@
                 <table class="table table-hover table-bordered">
                     <thead>
                         <tr>
-                            <th class="col-lot-id">{{ 'mautic.core.id'|trans }}</th>
-                            <th class="col-lot-name">{{ 'mautic.core.name'|trans }}</th>
+                            <th class="col-lot-id">{{ 'mautic.bpmessage.lot.col.id'|trans }}</th>
+                            <th class="col-lot-name">{{ 'mautic.bpmessage.lot.col.name'|trans }}</th>
                             <th class="col-lot-external-id">{{ 'mautic.bpmessage.lot.external_id'|trans }}</th>
-                            <th class="col-lot-campaign">{{ 'mautic.campaign.campaign'|trans }}</th>
-                            <th class="col-lot-status">{{ 'mautic.core.status'|trans }}</th>
-                            <th class="col-lot-error">{{ 'mautic.core.error'|trans }}</th>
+                            <th class="col-lot-campaign">{{ 'mautic.bpmessage.lot.col.campaign'|trans }}</th>
+                            <th class="col-lot-status">{{ 'mautic.bpmessage.lot.col.status'|trans }}</th>
+                            <th class="col-lot-error">{{ 'mautic.bpmessage.lot.col.error'|trans }}</th>
                             <th class="col-lot-messages">{{ 'mautic.bpmessage.messages'|trans }}</th>
-                            <th class="col-lot-created">{{ 'mautic.core.date.added'|trans }}</th>
-                            <th class="col-lot-actions">{{ 'mautic.core.actions'|trans }}</th>
+                            <th class="col-lot-created">{{ 'mautic.bpmessage.lot.col.created'|trans }}</th>
+                            <th class="col-lot-actions">{{ 'mautic.bpmessage.lot.col.actions'|trans }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -90,15 +90,17 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <span class="badge badge-default">{{ stats.total }}</span>
                                     {% if stats.pending > 0 %}
-                                        <span class="badge badge-warning" title="Pending">{{ stats.pending }}</span>
+                                        <span class="label label-warning" title="{{ 'mautic.bpmessage.messages.pending'|trans }}">{{ stats.pending }}</span>
                                     {% endif %}
                                     {% if stats.sent > 0 %}
-                                        <span class="badge badge-success" title="Sent">{{ stats.sent }}</span>
+                                        <span class="label label-success" title="{{ 'mautic.bpmessage.messages.sent'|trans }}">{{ stats.sent }}</span>
                                     {% endif %}
                                     {% if stats.failed > 0 %}
-                                        <span class="badge badge-danger" title="Failed">{{ stats.failed }}</span>
+                                        <span class="label label-danger" title="{{ 'mautic.bpmessage.messages.failed'|trans }}">{{ stats.failed }}</span>
+                                    {% endif %}
+                                    {% if stats.total == 0 %}
+                                        <span class="text-muted">0</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -111,16 +113,38 @@
                                         <a href="{{ path('mautic_bpmessage_lot_view', {'id': lot.id}) }}"
                                            class="btn btn-default btn-xs"
                                            data-toggle="ajax"
-                                           title="{{ 'mautic.core.form.view'|trans }}">
-                                            <i class="fa fa-eye"></i>
+                                           title="{{ 'mautic.bpmessage.lot.view'|trans }}">
+                                            <span class="fa fa-eye"></span> {{ 'mautic.bpmessage.lot.action.view'|trans }}
                                         </a>
-                                        {% if lot.status in ['FAILED', 'FINISHED'] and stats.failed > 0 %}
+                                        {# Reprocessar: apenas lotes FAILED ou CREATING sem externalLotId - NUNCA para FINISHED #}
+                                        {% if lot.status == 'FAILED' or (lot.status == 'CREATING' and not lot.externalLotId) %}
                                             <a href="{{ path('mautic_bpmessage_lot_reprocess', {'id': lot.id}) }}"
                                                class="btn btn-warning btn-xs"
                                                data-toggle="ajax"
                                                data-method="POST"
                                                title="{{ 'mautic.bpmessage.lot.reprocess'|trans }}">
-                                                <i class="fa fa-refresh"></i>
+                                                <span class="fa fa-refresh"></span> {{ 'mautic.bpmessage.lot.action.retry'|trans }}
+                                            </a>
+                                        {% endif %}
+                                        {# Processar Agora: lotes prontos para enviar #}
+                                        {% if lot.status == 'OPEN' or (lot.status == 'CREATING' and lot.externalLotId) %}
+                                            <a href="{{ path('mautic_bpmessage_lot_process_single', {'id': lot.id}) }}"
+                                               class="btn btn-primary btn-xs"
+                                               data-toggle="ajax"
+                                               data-method="POST"
+                                               title="{{ 'mautic.bpmessage.lot.process.single'|trans }}">
+                                                <span class="fa fa-play"></span> {{ 'mautic.bpmessage.lot.action.process'|trans }}
+                                            </a>
+                                        {% endif %}
+                                        {# Cancelar: lotes em andamento #}
+                                        {% if lot.status in ['CREATING', 'OPEN', 'SENDING'] %}
+                                            <a href="{{ path('mautic_bpmessage_lot_cancel', {'id': lot.id}) }}"
+                                               class="btn btn-danger btn-xs"
+                                               data-toggle="ajax"
+                                               data-method="POST"
+                                               title="{{ 'mautic.bpmessage.lot.cancel'|trans }}"
+                                               onclick="return confirm('{{ 'mautic.bpmessage.lot.cancel.confirm'|trans }}');">
+                                                <span class="fa fa-times"></span> {{ 'mautic.bpmessage.lot.action.cancel'|trans }}
                                             </a>
                                         {% endif %}
                                     </div>

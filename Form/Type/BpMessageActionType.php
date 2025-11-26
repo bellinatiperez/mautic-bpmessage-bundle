@@ -19,20 +19,20 @@ class BpMessageActionType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
-        // Service Type
+        // Service Type (API: 1=WhatsApp, 2=SMS, 3=Email, 4=RCS)
         $builder->add(
             'service_type',
             ChoiceType::class,
             [
                 'label'   => 'mautic.bpmessage.form.service_type',
                 'choices' => [
-                    'mautic.bpmessage.service_type.sms'      => 1,
-                    'mautic.bpmessage.service_type.whatsapp' => 2,
-                    'mautic.bpmessage.service_type.rcs'      => 3,
+                    'mautic.bpmessage.service_type.whatsapp' => 1,
+                    'mautic.bpmessage.service_type.sms'      => 2,
+                    'mautic.bpmessage.service_type.rcs'      => 4,
                 ],
                 'attr'        => ['class' => 'form-control'],
                 'required'    => true,
-                'empty_data'  => '2', // Default to WhatsApp only when empty
+                'empty_data'  => '1', // Default to WhatsApp (1) when empty
                 'placeholder' => false, // Don't show "Choose an option"
             ]
         );
@@ -97,6 +97,22 @@ class BpMessageActionType extends AbstractType
                 'constraints' => [
                     new NotBlank(['message' => 'mautic.bpmessage.id_service_settings.notblank']),
                 ],
+            ]
+        );
+
+        // Phone Pattern - for extracting areaCode and phone
+        $builder->add(
+            'phone_pattern',
+            TextType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.phone_pattern',
+                'label_attr' => ['class' => 'control-label'],
+                'attr'       => [
+                    'class'       => 'form-control',
+                    'tooltip'     => 'mautic.bpmessage.form.phone_pattern.tooltip',
+                    'placeholder' => '({contactfield=dddmobile}) {contactfield=mobile}',
+                ],
+                'required' => false,
             ]
         );
 
