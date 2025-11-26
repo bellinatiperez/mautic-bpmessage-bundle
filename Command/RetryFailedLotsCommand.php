@@ -231,8 +231,8 @@ EOT
         } catch (\Exception $e) {
             $io->error("  Exception: {$e->getMessage()}");
 
-            // Update error message
-            $lot->setErrorMessage('Exception: '.$e->getMessage());
+            // Update error message (no prefix, clean message)
+            $lot->setErrorMessage($e->getMessage());
             $this->em->flush();
 
             return false;

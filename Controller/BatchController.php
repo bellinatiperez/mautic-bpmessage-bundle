@@ -315,11 +315,7 @@ class BatchController
                         ], 400);
                     }
 
-                    $this->flashBag->add(
-                        $lot->getErrorMessage() ?: 'Failed to register lot in API',
-                        FlashBag::LEVEL_ERROR
-                    );
-
+                    // No flash message - error is already shown in lot details panel
                     return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
                 }
             }
@@ -334,8 +330,8 @@ class BatchController
             $this->flashBag->add('mautic.bpmessage.lot.reprocessed', FlashBag::LEVEL_SUCCESS);
 
         } catch (\Exception $e) {
-            // Save the error to the lot
-            $errorMessage = 'Exception during reprocess: '.$e->getMessage();
+            // Save the error to the lot (no prefix, clean message)
+            $errorMessage = $e->getMessage();
             $lot->setErrorMessage($errorMessage);
             $lot->setStatus('FAILED');
             $em->persist($lot);
@@ -355,7 +351,7 @@ class BatchController
                 ], 500);
             }
 
-            $this->flashBag->add($e->getMessage(), FlashBag::LEVEL_ERROR);
+            // No flash message - error is already shown in lot details panel
         }
 
         // Redirect back to list if came from list, otherwise to lot view
@@ -456,11 +452,7 @@ class BatchController
                         ], 400);
                     }
 
-                    $this->flashBag->add(
-                        $lot->getErrorMessage() ?: 'mautic.bpmessage.lot.process.failed',
-                        FlashBag::LEVEL_ERROR
-                    );
-
+                    // No flash message - error is already shown in lot details panel
                     return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
                 }
 
@@ -496,14 +488,11 @@ class BatchController
                     ]);
                 }
 
-                $this->flashBag->add(
-                    $lot->getErrorMessage() ?: 'mautic.bpmessage.lot.process.failed',
-                    FlashBag::LEVEL_ERROR
-                );
+                // No flash message - error is already shown in lot details panel
             }
         } catch (\Exception $e) {
-            // Save the error to the lot so it's visible in the lot details
-            $errorMessage = 'Exception: '.$e->getMessage();
+            // Save the error to the lot (no prefix, clean message)
+            $errorMessage = $e->getMessage();
             $lot->setErrorMessage($errorMessage);
             $lot->setStatus('FAILED');
             $em->persist($lot);
@@ -523,7 +512,7 @@ class BatchController
                 ], 500);
             }
 
-            $this->flashBag->add($e->getMessage(), FlashBag::LEVEL_ERROR);
+            // No flash message - error is already shown in lot details panel
         }
 
         // Redirect back to list if came from list, otherwise to lot view
