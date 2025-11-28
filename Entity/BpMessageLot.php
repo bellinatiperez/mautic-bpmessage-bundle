@@ -515,20 +515,6 @@ class BpMessageLot
     }
 
     /**
-     * Check if lot is expired based on endDate.
-     * This check has PRIORITY over shouldCloseByTime() and shouldCloseByCount().
-     *
-     * @return bool True if endDate is in the past
-     */
-    public function isExpiredByEndDate(): bool
-    {
-        // Use default PHP timezone - Doctrine handles UTC conversion automatically
-        $now = new \DateTime('now');
-
-        return $this->endDate < $now;
-    }
-
-    /**
      * Check if lot is open and accepting messages.
      */
     public function isOpen(): bool

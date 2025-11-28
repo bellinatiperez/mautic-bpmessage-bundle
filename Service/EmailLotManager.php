@@ -57,8 +57,8 @@ class EmailLotManager
 
         $lot = $qb->getQuery()->getOneOrNullResult();
 
-        // Check if lot can be reused - endDate expiration has PRIORITY
-        if (null !== $lot && !$lot->isExpiredByEndDate() && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
+        // Check if lot can be reused: not closed by count or time
+        if (null !== $lot && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
             $this->logger->info('BpMessage Email: Using existing OPEN lot', [
                 'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
@@ -71,9 +71,6 @@ class EmailLotManager
         // Log if lot was found but cannot be reused
         if (null !== $lot) {
             $reasons = [];
-            if ($lot->isExpiredByEndDate()) {
-                $reasons[] = 'endDate expired';
-            }
             if ($lot->shouldCloseByCount()) {
                 $reasons[] = 'batch size reached';
             }
