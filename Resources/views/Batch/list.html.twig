@@ -6,6 +6,115 @@
 
 {% block content %}
 <div class="pa-md">
+    {# Statistics Cards #}
+    <div class="row mb-3">
+        <div class="col-md-2">
+            <div class="panel panel-default">
+                <div class="panel-body text-center">
+                    <h2>{{ statistics.total|default(0) }}</h2>
+                    <p class="text-muted mb-0">{{ 'mautic.bpmessage.stats.total'|trans }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="panel panel-default">
+                <div class="panel-body text-center">
+                    <h2>{{ statistics.creating|default(0) }}</h2>
+                    <p class="text-muted mb-0">{{ 'mautic.bpmessage.lot.status.creating'|trans }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="panel panel-default">
+                <div class="panel-body text-center">
+                    <h2>{{ statistics.open|default(0) }}</h2>
+                    <p class="text-muted mb-0">{{ 'mautic.bpmessage.lot.status.open'|trans }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="panel panel-default">
+                <div class="panel-body text-center">
+                    <h2>{{ statistics.finished|default(0) }}</h2>
+                    <p class="text-muted mb-0">{{ 'mautic.bpmessage.lot.status.finished'|trans }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="panel panel-default">
+                <div class="panel-body text-center">
+                    <h2>{{ statistics.failed|default(0) }}</h2>
+                    <p class="text-muted mb-0">{{ 'mautic.bpmessage.lot.status.failed'|trans }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Filters #}
+    <div class="panel panel-default mb-3">
+        <div class="panel-body">
+            <form method="get" action="{{ path('mautic_bpmessage_lot_index') }}" class="form-inline">
+                <div class="form-group mr-2">
+                    <label class="mr-1">{{ 'mautic.bpmessage.filter.status'|trans }}:</label>
+                    <select name="status" class="form-control" onchange="this.form.submit()">
+                        <option value="">{{ 'mautic.bpmessage.filter.all'|trans }}</option>
+                        <option value="CREATING" {% if filterStatus == 'CREATING' %}selected{% endif %}>{{ 'mautic.bpmessage.lot.status.creating'|trans }}</option>
+                        <option value="OPEN" {% if filterStatus == 'OPEN' %}selected{% endif %}>{{ 'mautic.bpmessage.lot.status.open'|trans }}</option>
+                        <option value="FINISHED" {% if filterStatus == 'FINISHED' %}selected{% endif %}>{{ 'mautic.bpmessage.lot.status.finished'|trans }}</option>
+                        <option value="FAILED" {% if filterStatus == 'FAILED' %}selected{% endif %}>{{ 'mautic.bpmessage.lot.status.failed'|trans }}</option>
+                    </select>
+                </div>
+                <div class="form-group mr-2">
+                    <label class="mr-1">{{ 'mautic.bpmessage.filter.type'|trans }}:</label>
+                    <select name="type" class="form-control" onchange="this.form.submit()">
+                        <option value="">{{ 'mautic.bpmessage.filter.all'|trans }}</option>
+                        <option value="email" {% if filterType == 'email' %}selected{% endif %}>{{ 'mautic.bpmessage.filter.type.email'|trans }}</option>
+                        <option value="whatsapp" {% if filterType == 'whatsapp' %}selected{% endif %}>{{ 'mautic.bpmessage.filter.type.whatsapp'|trans }}</option>
+                        <option value="sms" {% if filterType == 'sms' %}selected{% endif %}>{{ 'mautic.bpmessage.filter.type.sms'|trans }}</option>
+                        <option value="rcs" {% if filterType == 'rcs' %}selected{% endif %}>{{ 'mautic.bpmessage.filter.type.rcs'|trans }}</option>
+                    </select>
+                </div>
+                <div class="form-group mr-2">
+                    <label class="mr-1">{{ 'mautic.bpmessage.filter.campaign'|trans }}:</label>
+                    <select name="campaign_id" class="form-control" onchange="this.form.submit()">
+                        <option value="">{{ 'mautic.bpmessage.filter.all_campaigns'|trans }}</option>
+                        {% for id, name in campaigns %}
+                            <option value="{{ id }}" {% if filterCampaign == id %}selected{% endif %}>
+                                {{ name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group mr-2">
+                    <label class="mr-1">{{ 'mautic.bpmessage.filter.period'|trans }}:</label>
+                    <select name="days" class="form-control" onchange="this.form.submit()">
+                        <option value="0" {% if filterDays == 0 %}selected{% endif %}>{{ 'mautic.bpmessage.filter.all_time'|trans }}</option>
+                        <option value="7" {% if filterDays == 7 %}selected{% endif %}>7 {{ 'mautic.bpmessage.days'|trans }}</option>
+                        <option value="14" {% if filterDays == 14 %}selected{% endif %}>14 {{ 'mautic.bpmessage.days'|trans }}</option>
+                        <option value="30" {% if filterDays == 30 %}selected{% endif %}>30 {{ 'mautic.bpmessage.days'|trans }}</option>
+                        <option value="60" {% if filterDays == 60 %}selected{% endif %}>60 {{ 'mautic.bpmessage.days'|trans }}</option>
+                        <option value="90" {% if filterDays == 90 %}selected{% endif %}>90 {{ 'mautic.bpmessage.days'|trans }}</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-default">
+                    <i class="fa fa-filter"></i> {{ 'mautic.bpmessage.filter.button'|trans }}
+                </button>
+                {% if filterStatus or filterType or filterCampaign or filterDays > 0 %}
+                    <a href="{{ path('mautic_bpmessage_lot_index') }}" class="btn btn-link">
+                        <i class="fa fa-times"></i> {{ 'mautic.bpmessage.filter.clear'|trans }}
+                    </a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    {# Results count #}
+    <div class="mb-2">
+        <span class="text-muted">
+            {{ 'mautic.bpmessage.results'|trans({'%count%': totalCount}) }}
+        </span>
+    </div>
+
     <div class="panel-body">
         {% if lots|length == 0 %}
             <div class="alert alert-info">
@@ -17,6 +126,7 @@
                     <thead>
                         <tr>
                             <th class="col-lot-id">{{ 'mautic.bpmessage.lot.col.id'|trans }}</th>
+                            <th class="col-lot-type">{{ 'mautic.bpmessage.lot.col.type'|trans }}</th>
                             <th class="col-lot-name">{{ 'mautic.bpmessage.lot.col.name'|trans }}</th>
                             <th class="col-lot-external-id">{{ 'mautic.bpmessage.lot.external_id'|trans }}</th>
                             <th class="col-lot-campaign">{{ 'mautic.bpmessage.lot.col.campaign'|trans }}</th>
@@ -36,6 +146,19 @@
                                         #{{ lot.id }}
                                     </a>
                                 </td>
+                                <td class="text-center">
+                                    {% if lot.emailLot %}
+                                        Email
+                                    {% elseif lot.serviceType == 1 %}
+                                        WhatsApp
+                                    {% elseif lot.serviceType == 2 %}
+                                        SMS
+                                    {% elseif lot.serviceType == 4 %}
+                                        RCS
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {{ lot.name }}
                                 </td>
@@ -48,7 +171,13 @@
                                 </td>
                                 <td>
                                     {% if lot.campaignId %}
-                                        Campaign #{{ lot.campaignId }}
+                                        {% if campaigns[lot.campaignId] is defined %}
+                                            <a href="{{ path('mautic_campaign_action', {'objectAction': 'view', 'objectId': lot.campaignId}) }}" target="_blank">
+                                                {{ campaigns[lot.campaignId] }}
+                                            </a>
+                                        {% else %}
+                                            Campaign #{{ lot.campaignId }}
+                                        {% endif %}
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}
@@ -64,21 +193,8 @@
                                         <span class="label label-danger">{{ 'mautic.bpmessage.lot.status.failed'|trans }}</span>
                                     {% endif %}
                                 </td>
-                                <td>
-                                    {# Show error message in dedicated column for better visibility #}
-                                    {% if lot.errorMessage %}
-                                        <div class="text-danger">
-                                            <i class="fa fa-exclamation-triangle"></i>
-                                            <small>{{ lot.errorMessage|slice(0, 100) }}{% if lot.errorMessage|length > 100 %}...{% endif %}</small>
-                                        </div>
-                                    {% elseif stats.failed > 0 %}
-                                        <div class="text-warning">
-                                            <i class="fa fa-warning"></i>
-                                            <small>{{ stats.failed }} message(s) failed</small>
-                                        </div>
-                                    {% else %}
-                                        <span class="text-muted">-</span>
-                                    {% endif %}
+                                <td class="text-center">
+                                    {{ stats.failed }}
                                 </td>
                                 <td class="text-center">
                                     {{ stats.total }}
@@ -88,22 +204,20 @@
                                         {{ lot.createdAt|date('Y-m-d H:i') }}
                                     </span>
                                 </td>
-                                <td>
-                                    <div class="btn-group">
+                                <td style="white-space: nowrap;">
+                                    <div class="btn-group" style="display: flex; flex-wrap: nowrap;">
                                         <a href="{{ path('mautic_bpmessage_lot_view', {'id': lot.id}) }}"
                                            class="btn btn-default btn-xs"
-                                           data-toggle="ajax"
-                                           title="{{ 'mautic.bpmessage.lot.view'|trans }}">
-                                            <span class="fa fa-eye"></span> {{ 'mautic.bpmessage.lot.action.view'|trans }}
+                                           data-toggle="ajax">
+                                            {{ 'mautic.bpmessage.lot.action.view'|trans }}
                                         </a>
                                         {# Reprocessar: apenas lotes FAILED ou CREATING sem externalLotId - NUNCA para FINISHED #}
                                         {% if lot.status == 'FAILED' or (lot.status == 'CREATING' and not lot.externalLotId) %}
                                             <a href="{{ path('mautic_bpmessage_lot_reprocess', {'id': lot.id}) }}"
                                                class="btn btn-warning btn-xs"
                                                data-toggle="ajax"
-                                               data-method="POST"
-                                               title="{{ 'mautic.bpmessage.lot.reprocess'|trans }}">
-                                                <span class="fa fa-refresh"></span> {{ 'mautic.bpmessage.lot.action.retry'|trans }}
+                                               data-method="POST">
+                                                {{ 'mautic.bpmessage.lot.action.retry'|trans }}
                                             </a>
                                         {% endif %}
                                         {# Processar: lotes prontos para enviar #}
@@ -111,9 +225,8 @@
                                             <a href="{{ path('mautic_bpmessage_lot_process_single', {'id': lot.id}) }}"
                                                class="btn btn-primary btn-xs"
                                                data-toggle="ajax"
-                                               data-method="POST"
-                                               title="{{ 'mautic.bpmessage.lot.action.process'|trans }}">
-                                                <span class="fa fa-play"></span> {{ 'mautic.bpmessage.lot.action.process'|trans }}
+                                               data-method="POST">
+                                                {{ 'mautic.bpmessage.lot.action.process'|trans }}
                                             </a>
                                         {% endif %}
                                         {# Cancelar: lotes em andamento #}
@@ -122,9 +235,8 @@
                                                class="btn btn-danger btn-xs"
                                                data-toggle="ajax"
                                                data-method="POST"
-                                               title="{{ 'mautic.bpmessage.lot.cancel'|trans }}"
                                                onclick="return confirm('{{ 'mautic.bpmessage.lot.cancel.confirm'|trans }}');">
-                                                <span class="fa fa-times"></span> {{ 'mautic.bpmessage.lot.action.cancel'|trans }}
+                                                {{ 'mautic.bpmessage.lot.action.cancel'|trans }}
                                             </a>
                                         {% endif %}
                                     </div>
@@ -141,23 +253,27 @@
                     <ul class="pagination">
                         {% if page > 1 %}
                             <li>
-                                <a href="{{ path('mautic_bpmessage_lot_index', {'page': page - 1}) }}" data-toggle="ajax">
+                                <a href="{{ path('mautic_bpmessage_lot_index', {'page': page - 1, 'status': filterStatus, 'type': filterType, 'campaign_id': filterCampaign, 'days': filterDays}) }}" data-toggle="ajax">
                                     <i class="fa fa-angle-left"></i>
                                 </a>
                             </li>
                         {% endif %}
 
                         {% for p in 1..totalPages %}
-                            <li {% if p == page %}class="active"{% endif %}>
-                                <a href="{{ path('mautic_bpmessage_lot_index', {'page': p}) }}" data-toggle="ajax">
-                                    {{ p }}
-                                </a>
-                            </li>
+                            {% if p <= 3 or p > totalPages - 3 or (p >= page - 2 and p <= page + 2) %}
+                                <li {% if p == page %}class="active"{% endif %}>
+                                    <a href="{{ path('mautic_bpmessage_lot_index', {'page': p, 'status': filterStatus, 'type': filterType, 'campaign_id': filterCampaign, 'days': filterDays}) }}" data-toggle="ajax">
+                                        {{ p }}
+                                    </a>
+                                </li>
+                            {% elseif p == 4 or p == totalPages - 3 %}
+                                <li class="disabled"><span>...</span></li>
+                            {% endif %}
                         {% endfor %}
 
                         {% if page < totalPages %}
                             <li>
-                                <a href="{{ path('mautic_bpmessage_lot_index', {'page': page + 1}) }}" data-toggle="ajax">
+                                <a href="{{ path('mautic_bpmessage_lot_index', {'page': page + 1, 'status': filterStatus, 'type': filterType, 'campaign_id': filterCampaign, 'days': filterDays}) }}" data-toggle="ajax">
                                     <i class="fa fa-angle-right"></i>
                                 </a>
                             </li>

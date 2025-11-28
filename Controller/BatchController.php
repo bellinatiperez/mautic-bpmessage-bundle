@@ -55,17 +55,23 @@ class BatchController
     }
 
     /**
-     * List all lots.
+     * List all lots with filters.
      */
     public function indexAction(Request $request, int $page = 1): Response
     {
         $limit  = 20;
         $offset = ($page - 1) * $limit;
 
+        // Get filter parameters
+        $filterStatus   = $request->query->get('status', '');
+        $filterType     = $request->query->get('type', '');      // 'email', 'sms', 'whatsapp', 'rcs' or ''
+        $filterCampaign = $request->query->get('campaign_id', '');
+        $filterDays     = (int) $request->query->get('days', 0);  // 0 = all, 7, 14, 30, 60, 90
+
         // Get entity manager
         $em = $this->doctrine->getManager();
 
-        // Get lots with pagination
+        // Get lots with pagination and filters
         $qb = $em->createQueryBuilder();
         $qb->select('l')
             ->from(BpMessageLot::class, 'l')
@@ -73,13 +79,131 @@ class BatchController
             ->setMaxResults($limit)
             ->setFirstResult($offset);
 
+        // Apply filters
+        if (!empty($filterStatus)) {
+            $qb->andWhere('l.status = :status')
+                ->setParameter('status', $filterStatus);
+        }
+
+        if (!empty($filterType)) {
+            if ('email' === $filterType) {
+                // Email lots have idQuotaSettings = 0
+                $qb->andWhere('l.idQuotaSettings = 0');
+            } elseif ('whatsapp' === $filterType) {
+                // WhatsApp = serviceType 1
+                $qb->andWhere('l.serviceType = 1');
+            } elseif ('sms' === $filterType) {
+                // SMS = serviceType 2
+                $qb->andWhere('l.serviceType = 2');
+            } elseif ('rcs' === $filterType) {
+                // RCS = serviceType 4
+                $qb->andWhere('l.serviceType = 4');
+            }
+        }
+
+        if (!empty($filterCampaign)) {
+            $qb->andWhere('l.campaignId = :campaignId')
+                ->setParameter('campaignId', (int) $filterCampaign);
+        }
+
+        if ($filterDays > 0) {
+            $dateFrom = new \DateTime("-{$filterDays} days");
+            $qb->andWhere('l.createdAt >= :dateFrom')
+                ->setParameter('dateFrom', $dateFrom);
+        }
+
         $lots = $qb->getQuery()->getResult();
 
-        // Get total count
+        // Get total count with same filters
         $countQb = $em->createQueryBuilder();
         $countQb->select('COUNT(l.id)')
             ->from(BpMessageLot::class, 'l');
+
+        // Apply same filters to count query
+        if (!empty($filterStatus)) {
+            $countQb->andWhere('l.status = :status')
+                ->setParameter('status', $filterStatus);
+        }
+
+        if (!empty($filterType)) {
+            if ('email' === $filterType) {
+                $countQb->andWhere('l.idQuotaSettings = 0');
+            } elseif ('whatsapp' === $filterType) {
+                $countQb->andWhere('l.serviceType = 1');
+            } elseif ('sms' === $filterType) {
+                $countQb->andWhere('l.serviceType = 2');
+            } elseif ('rcs' === $filterType) {
+                $countQb->andWhere('l.serviceType = 4');
+            }
+        }
+
+        if (!empty($filterCampaign)) {
+            $countQb->andWhere('l.campaignId = :campaignId')
+                ->setParameter('campaignId', (int) $filterCampaign);
+        }
+
+        if ($filterDays > 0) {
+            $dateFrom = new \DateTime("-{$filterDays} days");
+            $countQb->andWhere('l.createdAt >= :dateFrom')
+                ->setParameter('dateFrom', $dateFrom);
+        }
+
         $totalCount = (int) $countQb->getQuery()->getSingleScalarResult();
+
+        // Get available campaigns for filter dropdown
+        $campaignsQb = $em->createQueryBuilder();
+        $campaignsQb->select('DISTINCT l.campaignId')
+            ->from(BpMessageLot::class, 'l')
+            ->where('l.campaignId IS NOT NULL')
+            ->orderBy('l.campaignId', 'ASC');
+        $campaignIds = array_column($campaignsQb->getQuery()->getArrayResult(), 'campaignId');
+
+        // Get campaign names from campaigns table
+        $campaigns = [];
+        if (!empty($campaignIds)) {
+            $conn = $em->getConnection();
+            $campaignRows = $conn->fetchAllAssociative(
+                'SELECT id, name FROM campaigns WHERE id IN ('.implode(',', $campaignIds).')'
+            );
+            foreach ($campaignRows as $row) {
+                $campaigns[$row['id']] = $row['name'];
+            }
+        }
+
+        // Get statistics summary
+        $statsQb = $em->createQueryBuilder();
+        $statsQb->select(
+            'l.status',
+            'COUNT(l.id) as count',
+            'SUM(CASE WHEN l.idQuotaSettings = 0 THEN 1 ELSE 0 END) as emailCount',
+            'SUM(CASE WHEN l.serviceType = 1 THEN 1 ELSE 0 END) as whatsappCount',
+            'SUM(CASE WHEN l.serviceType = 2 THEN 1 ELSE 0 END) as smsCount',
+            'SUM(CASE WHEN l.serviceType = 4 THEN 1 ELSE 0 END) as rcsCount'
+        )
+            ->from(BpMessageLot::class, 'l')
+            ->groupBy('l.status');
+
+        $statsResults = $statsQb->getQuery()->getResult();
+        $statistics   = [
+            'total'     => 0,
+            'creating'  => 0,
+            'open'      => 0,
+            'finished'  => 0,
+            'failed'    => 0,
+            'email'     => 0,
+            'whatsapp'  => 0,
+            'sms'       => 0,
+            'rcs'       => 0,
+        ];
+
+        foreach ($statsResults as $stat) {
+            $statistics['total'] += $stat['count'];
+            $statistics[strtolower($stat['status'])] = $stat['count'];
+            $statistics['email'] += (int) $stat['emailCount'];
+            $statistics['whatsapp'] += (int) $stat['whatsappCount'];
+            $statistics['sms'] += (int) $stat['smsCount'];
+            $statistics['rcs'] += (int) $stat['rcsCount'];
+        }
 
         $totalPages = (int) ceil($totalCount / $limit);
 
@@ -110,13 +234,19 @@ class BatchController
         }
 
         $content = $this->twig->render('@MauticBpMessage/Batch/list.html.twig', [
-            'lots'          => $lots,
-            'lotStats'      => $lotStats,
-            'page'          => $page,
-            'totalPages'    => $totalPages,
-            'totalCount'    => $totalCount,
-            'activeLink'    => '#mautic_bpmessage_lot_index',
-            'mauticContent' => 'bpmessageLot',
+            'lots'           => $lots,
+            'lotStats'       => $lotStats,
+            'page'           => $page,
+            'totalPages'     => $totalPages,
+            'totalCount'     => $totalCount,
+            'statistics'     => $statistics,
+            'campaigns'      => $campaigns,
+            'filterStatus'   => $filterStatus,
+            'filterType'     => $filterType,
+            'filterCampaign' => $filterCampaign,
+            'filterDays'     => $filterDays,
+            'activeLink'     => '#mautic_bpmessage_lot_index',
+            'mauticContent'  => 'bpmessageLot',
         ]);
 
         if ($request->isXmlHttpRequest()) {
