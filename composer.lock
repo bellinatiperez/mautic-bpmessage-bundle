@@ -6025,7 +6025,7 @@
             "dist": {
                 "type": "path",
                 "url": "app",
-                "reference": "aa676ebe16891c90f93864a4707233136bc4b73a"
+                "reference": "251fc91a1b7b162a61944617ac230a13fcb35695"
             },
             "require": {
                 "aws/aws-sdk-php": "~3.0",
@@ -6056,7 +6056,7 @@
                 "geoip2/geoip2": "~2.0",
                 "giggsey/libphonenumber-for-php": "^8.12",
                 "guzzlehttp/guzzle": "^7.6",
-                "guzzlehttp/oauth-subscriber": "^0.8.0",
+                "guzzlehttp/oauth-subscriber": "^0.8.1",
                 "helios-ag/fm-elfinder-bundle": "^12.3",
                 "ip2location/ip2location-php": "^7.2",
                 "jbroadway/urlify": "^1.0",
@@ -18593,5 +18593,5 @@
     "platform-overrides": {
         "php": "8.1.0"
     },
-    "plugin-api-version": "2.9.0"
+    "plugin-api-version": "2.6.0"
 }
