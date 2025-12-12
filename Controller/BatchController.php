@@ -270,7 +270,7 @@ class BatchController
         $lot = $em->getRepository(BpMessageLot::class)->find($id);
 
         if (!$lot) {
-            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', FlashBag::LEVEL_ERROR);
+            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', [], FlashBag::LEVEL_ERROR);
 
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
         }
@@ -342,7 +342,7 @@ class BatchController
                 return new JsonResponse(['success' => false, 'message' => 'Lot not found'], 404);
             }
 
-            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', FlashBag::LEVEL_ERROR);
+            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', [], FlashBag::LEVEL_ERROR);
 
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
         }
@@ -457,7 +457,7 @@ class BatchController
                 ]);
             }
 
-            $this->flashBag->add('mautic.bpmessage.lot.reprocessed', FlashBag::LEVEL_SUCCESS);
+            $this->flashBag->add('mautic.bpmessage.lot.reprocessed', [], FlashBag::LEVEL_SUCCESS);
         } catch (\Exception $e) {
             // Save the error to the lot (no prefix, clean message)
             $errorMessage = $e->getMessage();
@@ -501,7 +501,7 @@ class BatchController
                 return new JsonResponse(['success' => false, 'message' => 'Lot not found'], 404);
             }
 
-            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', FlashBag::LEVEL_ERROR);
+            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', [], FlashBag::LEVEL_ERROR);
 
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
         }
@@ -515,7 +515,7 @@ class BatchController
                 ], 400);
             }
 
-            $this->flashBag->add('mautic.bpmessage.lot.error.cannot_process', FlashBag::LEVEL_ERROR);
+            $this->flashBag->add('mautic.bpmessage.lot.error.cannot_process', [], FlashBag::LEVEL_ERROR);
 
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
         }
@@ -605,7 +605,7 @@ class BatchController
                     ]);
                 }
 
-                $this->flashBag->add('mautic.bpmessage.lot.process.success', FlashBag::LEVEL_SUCCESS);
+                $this->flashBag->add('mautic.bpmessage.lot.process.success', [], FlashBag::LEVEL_SUCCESS);
             } else {
                 // Refresh lot to get error message
                 $em->refresh($lot);
@@ -662,7 +662,7 @@ class BatchController
                 return new JsonResponse(['success' => false, 'message' => 'Lot not found'], 404);
             }
 
-            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', FlashBag::LEVEL_ERROR);
+            $this->flashBag->add('mautic.bpmessage.lot.error.notfound', [], FlashBag::LEVEL_ERROR);
 
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
         }
@@ -676,7 +676,7 @@ class BatchController
                 ], 400);
             }
 
-            $this->flashBag->add('mautic.bpmessage.lot.error.cannot_cancel', FlashBag::LEVEL_ERROR);
+            $this->flashBag->add('mautic.bpmessage.lot.error.cannot_cancel', [], FlashBag::LEVEL_ERROR);
 
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_view', ['id' => $id]));
         }
@@ -710,7 +710,7 @@ class BatchController
             ]);
         }
 
-        $this->flashBag->add('mautic.bpmessage.lot.cancelled', FlashBag::LEVEL_SUCCESS);
+        $this->flashBag->add('mautic.bpmessage.lot.cancelled', [], FlashBag::LEVEL_SUCCESS);
 
         // Redirect back to list if came from list, otherwise to lot view
         return $this->redirectBackToReferer($request, $id);
@@ -750,10 +750,11 @@ class BatchController
 
         $flashType = $stats['failed'] > 0 ? FlashBag::LEVEL_WARNING : FlashBag::LEVEL_SUCCESS;
         $this->flashBag->add(
-            $this->translator->trans('mautic.bpmessage.lot.processed', [
+            'mautic.bpmessage.lot.processed',
+            [
                 '%succeeded%' => $stats['succeeded'],
                 '%failed%'    => $stats['failed'],
-            ]),
+            ],
             $flashType
         );
 

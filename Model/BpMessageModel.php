@@ -53,6 +53,15 @@ class BpMessageModel
     public function sendMessage(Lead $lead, array $config, Campaign $campaign): array
     {
         try {
+            // Debug: Log config received
+            $this->logger->debug('BpMessage: Config received in sendMessage', [
+                'config_keys'         => array_keys($config),
+                'id_quota_settings'   => $config['id_quota_settings'] ?? 'NOT SET',
+                'id_service_settings' => $config['id_service_settings'] ?? 'NOT SET',
+                'phone_field'         => $config['phone_field'] ?? 'NOT SET',
+                'message_text'        => $config['message_text'] ?? 'NOT SET',
+            ]);
+
             // Get settings from integration
             $apiBaseUrl = $this->getApiBaseUrl();
             if (!$apiBaseUrl) {
@@ -78,49 +87,80 @@ class BpMessageModel
             // Get or create active lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Map lead to message format
-            $messageData = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
+            // Extract phone numbers from the selected field
+            $phones = $this->messageMapper->extractPhonesFromField($lead, $config);
 
-            // Check if phone is present in the message data
-            $hasPhone = !empty($messageData['phone']) || !empty($messageData['areaCode']);
+            if (empty($phones)) {
+                // No phone - queue as FAILED for metrics tracking
+                $messageData  = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
+                $errorMessage = 'Contato sem telefone';
 
-            if ($hasPhone) {
-                // Queue message normally (PENDING status)
-                $this->lotManager->queueMessage($lot, $lead, $messageData);
+                $this->lotManager->queueMessageWithStatus(
+                    $lot,
+                    $lead,
+                    $messageData,
+                    'FAILED',
+                    $errorMessage
+                );
 
-                $this->logger->info('BpMessage: Message queued successfully', [
+                $this->logger->warning('BpMessage: Contact queued as FAILED - no phone number', [
                     'lead_id'     => $lead->getId(),
                     'lot_id'      => $lot->getId(),
                     'campaign_id' => $campaign->getId(),
                 ]);
 
+                // Return success to campaign - contact is registered but marked as failed
                 return [
                     'success' => true,
-                    'message' => 'Message queued successfully',
+                    'message' => 'Contact registered (no phone - marked as failed)',
                 ];
             }
 
-            // No phone - queue as FAILED for metrics tracking
-            $errorMessage = 'Contato sem telefone';
+            // Queue a message for each phone number (supports collection fields)
+            $queuedCount  = 0;
+            $failedCount  = 0;
+            foreach ($phones as $phoneData) {
+                // Map lead to message format (base message without phone)
+                $messageData = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
 
-            $this->lotManager->queueMessageWithStatus(
-                $lot,
-                $lead,
-                $messageData,
-                'FAILED',
-                $errorMessage
-            );
+                // Add phone data
+                $messageData['areaCode'] = $phoneData['areaCode'];
+                $messageData['phone']    = $phoneData['phone'];
 
-            $this->logger->warning('BpMessage: Contact queued as FAILED - no phone number', [
+                // Validate phone - must have at least 8 digits
+                $phoneDigits = $phoneData['areaCode'].$phoneData['phone'];
+                if (strlen($phoneDigits) < 8) {
+                    // Invalid phone - queue as FAILED so it's not sent to API
+                    $queue = $this->lotManager->queueMessageWithStatus(
+                        $lot,
+                        $lead,
+                        $messageData,
+                        'FAILED',
+                        'Telefone inválido: '.$phoneDigits
+                    );
+                    if (null !== $queue) {
+                        ++$failedCount;
+                    }
+                    continue;
+                }
+
+                // Queue message (PENDING status) - returns null if duplicate
+                $queue = $this->lotManager->queueMessage($lot, $lead, $messageData);
+                if (null !== $queue) {
+                    ++$queuedCount;
+                }
+            }
+
+            $this->logger->info('BpMessage: Messages queued successfully', [
                 'lead_id'     => $lead->getId(),
                 'lot_id'      => $lot->getId(),
                 'campaign_id' => $campaign->getId(),
+                'phone_count' => $queuedCount,
             ]);
 
-            // Return success to campaign - contact is registered but marked as failed
             return [
                 'success' => true,
-                'message' => 'Contact registered (no phone - marked as failed)',
+                'message' => sprintf('Queued %d message(s)', $queuedCount),
             ];
         } catch (\Exception $e) {
             $this->logger->error('BpMessage: Failed to send message', [

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace MauticPlugin\MauticBpMessageBundle\Form\Type;
 
+use Mautic\LeadBundle\Form\Type\LeadFieldsType;
+use Mautic\LeadBundle\Model\FieldModel;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
 use Symfony\Component\Validator\Constraints\NotBlank;
 
 /**
@@ -17,6 +21,11 @@ use Symfony\Component\Validator\Constraints\NotBlank;
  */
 class BpMessageActionType extends AbstractType
 {
+    public function __construct(
+        private FieldModel $fieldModel
+    ) {
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         // Service Type (API: 1=WhatsApp, 2=SMS, 3=Email, 4=RCS)
@@ -100,21 +109,31 @@ class BpMessageActionType extends AbstractType
             ]
         );
 
-        // Phone Pattern - for extracting areaCode and phone
+        // Phone Field - select contact field containing phone number(s)
         $builder->add(
-            'phone_pattern',
-            TextType::class,
+            'phone_field',
+            LeadFieldsType::class,
             [
-                'label'      => 'mautic.bpmessage.form.phone_pattern',
+                'label'      => 'mautic.bpmessage.form.phone_field',
                 'label_attr' => ['class' => 'control-label'],
                 'attr'       => [
-                    'class'       => 'form-control',
-                    'tooltip'     => 'mautic.bpmessage.form.phone_pattern.tooltip',
-                    'placeholder' => '({contactfield=dddmobile}) {contactfield=mobile}',
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.phone_field.tooltip',
                 ],
-                'required' => false,
+                'required'            => true,
+                'with_tags'           => false,
+                'with_company_fields' => false,
             ]
         );
+
+        // Set default value for phone_field when creating new action
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event) {
+            $data = $event->getData();
+            if (is_array($data) && empty($data['phone_field'])) {
+                $data['phone_field'] = 'mobile';
+                $event->setData($data);
+            }
+        });
 
         // Message Text (SMS/WhatsApp)
         $builder->add(

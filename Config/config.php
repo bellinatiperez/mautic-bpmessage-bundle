@@ -76,8 +76,9 @@ return [
         ],
         'forms' => [
             'mautic.bpmessage.form.type.action' => [
-                'class' => MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageActionType::class,
-                'alias' => 'bpmessage_action',
+                'class'     => MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageActionType::class,
+                'arguments' => ['mautic.lead.model.field'],
+                'alias'     => 'bpmessage_action',
             ],
             'mautic.bpmessage.form.type.email_action' => [
                 'class' => MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageEmailActionType::class,
@@ -263,6 +264,7 @@ return [
                     'event_dispatcher',
                     'mautic.helper.cache_storage',
                     'doctrine.orm.entity_manager',
+                    'session',
                     'request_stack',
                     'router',
                     'translator',
@@ -275,7 +277,6 @@ return [
                     'mautic.lead.model.field',
                     'mautic.plugin.model.integration_entity',
                     'mautic.lead.model.dnc',
-                    'mautic.lead.field.fields_with_unique_identifier',
                 ],
             ],
         ],

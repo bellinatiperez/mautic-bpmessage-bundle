@@ -9,7 +9,6 @@ use Mautic\CoreBundle\Helper\CacheStorageHelper;
 use Mautic\CoreBundle\Helper\EncryptionHelper;
 use Mautic\CoreBundle\Helper\PathsHelper;
 use Mautic\CoreBundle\Model\NotificationModel;
-use Mautic\LeadBundle\Field\FieldsWithUniqueIdentifier;
 use Mautic\LeadBundle\Model\CompanyModel;
 use Mautic\LeadBundle\Model\DoNotContact as DoNotContactModel;
 use Mautic\LeadBundle\Model\FieldModel;
@@ -20,6 +19,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -35,6 +35,7 @@ class BpMessageIntegration extends AbstractIntegration
         EventDispatcherInterface $dispatcher,
         CacheStorageHelper $cacheStorageHelper,
         EntityManager $em,
+        SessionInterface $session,
         RequestStack $requestStack,
         RouterInterface $router,
         TranslatorInterface $translator,
@@ -47,12 +48,12 @@ class BpMessageIntegration extends AbstractIntegration
         FieldModel $fieldModel,
         IntegrationEntityModel $integrationEntityModel,
         DoNotContactModel $doNotContact,
-        FieldsWithUniqueIdentifier $fieldsWithUniqueIdentifier,
     ) {
         parent::__construct(
             $dispatcher,
             $cacheStorageHelper,
             $em,
+            $session,
             $requestStack,
             $router,
             $translator,
@@ -65,7 +66,6 @@ class BpMessageIntegration extends AbstractIntegration
             $fieldModel,
             $integrationEntityModel,
             $doNotContact,
-            $fieldsWithUniqueIdentifier,
         );
     }
 

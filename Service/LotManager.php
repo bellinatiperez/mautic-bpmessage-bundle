@@ -179,8 +179,10 @@ class LotManager
 
     /**
      * Queue a message for a lot.
+     *
+     * @return BpMessageQueue|null Returns null if duplicate (same lead+phone already queued)
      */
-    public function queueMessage(BpMessageLot $lot, Lead $lead, array $messageData): BpMessageQueue
+    public function queueMessage(BpMessageLot $lot, Lead $lead, array $messageData): ?BpMessageQueue
     {
         return $this->queueMessageWithStatus($lot, $lead, $messageData, 'PENDING');
     }
@@ -198,25 +200,28 @@ class LotManager
         array $messageData,
         string $status = 'PENDING',
         ?string $errorMessage = null,
-    ): BpMessageQueue {
-        // Check if lead is already queued
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('COUNT(q.id)')
-            ->from(BpMessageQueue::class, 'q')
-            ->where('q.lot = :lot')
-            ->andWhere('q.lead = :lead')
-            ->setParameter('lot', $lot)
-            ->setParameter('lead', $lead);
+    ): ?BpMessageQueue {
+        // Build unique key for duplicate check: lead_id + areaCode + phone (for collection fields support)
+        $areaCode = $messageData['areaCode'] ?? '';
+        $phone    = $messageData['phone'] ?? '';
 
-        $count = (int) $qb->getQuery()->getSingleScalarResult();
+        // Check if this specific lead+areaCode+phone combination is already queued
+        $conn  = $this->entityManager->getConnection();
+        $count = (int) $conn->fetchOne(
+            'SELECT COUNT(*) FROM bpmessage_queue WHERE lot_id = ? AND lead_id = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, "$.areaCode")) = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, "$.phone")) = ?',
+            [$lot->getId(), $lead->getId(), $areaCode, $phone]
+        );
 
         if ($count > 0) {
-            $this->logger->warning('BpMessage: Lead already queued', [
-                'lot_id'  => $lot->getId(),
-                'lead_id' => $lead->getId(),
+            $this->logger->debug('BpMessage: Lead+phone already queued, skipping', [
+                'lot_id'   => $lot->getId(),
+                'lead_id'  => $lead->getId(),
+                'areaCode' => $areaCode,
+                'phone'    => $phone,
             ]);
 
-            throw new \RuntimeException("Lead {$lead->getId()} is already queued for lot {$lot->getId()}");
+            // Return null to indicate duplicate - caller should continue to next phone
+            return null;
         }
 
         $queue = new BpMessageQueue();

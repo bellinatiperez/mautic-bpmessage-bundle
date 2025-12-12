@@ -424,6 +424,92 @@ class MessageMapper
     }
 
     /**
+     * Extract phone numbers from a selected contact field.
+     *
+     * If the field is a collection (JSON array), returns multiple phone entries.
+     * If the field is a simple string, returns a single phone entry.
+     *
+     * @return array Array of ['areaCode' => string, 'phone' => string]
+     */
+    public function extractPhonesFromField(Lead $lead, array $config): array
+    {
+        $fieldAlias = $config['phone_field'] ?? null;
+        if (empty($fieldAlias)) {
+            $this->logger->debug('BpMessage: No phone_field configured', [
+                'lead_id' => $lead->getId(),
+            ]);
+
+            return [];
+        }
+
+        $fieldValue = $lead->getFieldValue($fieldAlias);
+        if (empty($fieldValue)) {
+            $this->logger->debug('BpMessage: Phone field is empty', [
+                'lead_id'     => $lead->getId(),
+                'field_alias' => $fieldAlias,
+            ]);
+
+            return [];
+        }
+
+        $this->logger->debug('BpMessage: Extracting phones from field', [
+            'lead_id'     => $lead->getId(),
+            'field_alias' => $fieldAlias,
+            'field_value' => $fieldValue,
+        ]);
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
+            $decoded = json_decode($fieldValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                $phones = [];
+                foreach ($decoded as $phone) {
+                    if (!empty($phone)) {
+                        $phones[] = $this->normalizePhone((string) $phone);
+                    }
+                }
+
+                $this->logger->debug('BpMessage: Extracted phones from collection', [
+                    'lead_id'     => $lead->getId(),
+                    'phone_count' => count($phones),
+                ]);
+
+                return $phones;
+            }
+        }
+
+        // Single value
+        return [$this->normalizePhone((string) $fieldValue)];
+    }
+
+    /**
+     * Normalize a phone number extracting area code and phone.
+     *
+     * Brazilian format: assumes first 2 digits are area code (DDD).
+     *
+     * @return array ['areaCode' => string, 'phone' => string]
+     */
+    private function normalizePhone(string $phone): array
+    {
+        // Remove all non-numeric characters
+        $digits = preg_replace('/[^0-9]/', '', $phone);
+
+        // Brazilian format: 10+ digits = DDD (2) + phone (8-9)
+        if (strlen($digits) >= 10) {
+            return [
+                'areaCode' => substr($digits, 0, 2),
+                'phone'    => substr($digits, 2),
+            ];
+        }
+
+        // Short number - no area code
+        return [
+            'areaCode' => '',
+            'phone'    => $digits,
+        ];
+    }
+
+    /**
      * Validate that a lead has all required fields for BpMessage.
      *
      * @return array ['valid' => bool, 'errors' => string[]]
