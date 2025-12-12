@@ -9,6 +9,7 @@ use Mautic\CoreBundle\Helper\CacheStorageHelper;
 use Mautic\CoreBundle\Helper\EncryptionHelper;
 use Mautic\CoreBundle\Helper\PathsHelper;
 use Mautic\CoreBundle\Model\NotificationModel;
+use Mautic\LeadBundle\Field\FieldsWithUniqueIdentifier;
 use Mautic\LeadBundle\Model\CompanyModel;
 use Mautic\LeadBundle\Model\DoNotContact as DoNotContactModel;
 use Mautic\LeadBundle\Model\FieldModel;
@@ -29,7 +30,8 @@ class BpMessageIntegration extends AbstractIntegration
 {
     /**
      * Constructor with all required dependencies.
-     * Compatible with Mautic 5.x and 6.x (session removed in Symfony 6).
+     * Compatible with Mautic 5.x and 6.x.
+     * The $fieldsWithUniqueIdentifier parameter is required in Mautic 6.x but optional for 5.x compatibility.
      */
     public function __construct(
         EventDispatcherInterface $dispatcher,
@@ -47,8 +49,10 @@ class BpMessageIntegration extends AbstractIntegration
         FieldModel $fieldModel,
         IntegrationEntityModel $integrationEntityModel,
         DoNotContactModel $doNotContact,
+        ?FieldsWithUniqueIdentifier $fieldsWithUniqueIdentifier = null,
     ) {
-        parent::__construct(
+        // Build arguments array for parent constructor
+        $args = [
             $dispatcher,
             $cacheStorageHelper,
             $em,
@@ -64,7 +68,23 @@ class BpMessageIntegration extends AbstractIntegration
             $fieldModel,
             $integrationEntityModel,
             $doNotContact,
-        );
+        ];
+
+        // Add fieldsWithUniqueIdentifier if provided (Mautic 6.x)
+        // Check if parent constructor expects 16 parameters
+        $reflection = new \ReflectionClass(AbstractIntegration::class);
+        $constructor = $reflection->getConstructor();
+        if ($constructor && $constructor->getNumberOfParameters() >= 16) {
+            // Mautic 6.x - fieldsWithUniqueIdentifier is required
+            if (null === $fieldsWithUniqueIdentifier) {
+                throw new \InvalidArgumentException(
+                    'FieldsWithUniqueIdentifier is required for Mautic 6.x compatibility'
+                );
+            }
+            $args[] = $fieldsWithUniqueIdentifier;
+        }
+
+        parent::__construct(...$args);
     }
 
     public function getName(): string
