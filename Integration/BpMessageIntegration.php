@@ -19,7 +19,6 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -30,12 +29,12 @@ class BpMessageIntegration extends AbstractIntegration
 {
     /**
      * Constructor with all required dependencies.
+     * Compatible with Mautic 5.x and 6.x (session removed in Symfony 6).
      */
     public function __construct(
         EventDispatcherInterface $dispatcher,
         CacheStorageHelper $cacheStorageHelper,
         EntityManager $em,
-        SessionInterface $session,
         RequestStack $requestStack,
         RouterInterface $router,
         TranslatorInterface $translator,
@@ -53,7 +52,6 @@ class BpMessageIntegration extends AbstractIntegration
             $dispatcher,
             $cacheStorageHelper,
             $em,
-            $session,
             $requestStack,
             $router,
             $translator,
