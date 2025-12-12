@@ -3,6 +3,7 @@
 namespace Mautic\LeadBundle\Form\Type;
 
 use Mautic\CoreBundle\Form\Type\BooleanType;
+use Mautic\CoreBundle\Form\Type\CollectionFieldType;
 use Mautic\CoreBundle\Form\Type\CountryType;
 use Mautic\CoreBundle\Form\Type\LocaleType;
 use Mautic\CoreBundle\Form\Type\LookupType;
@@ -228,6 +229,43 @@ trait EntityFieldsBuildFormTrait
                         $type,
                         $typeProperties
                     );
+                    break;
+                case CollectionFieldType::class:
+                    $constraints[] = new Length(['max' => 65535]);
+
+                    // Parse existing values to create choices (similar to tags)
+                    $existingValues = [];
+                    if (!empty($value)) {
+                        if (is_string($value)) {
+                            $decoded = json_decode($value, true);
+                            $existingValues = is_array($decoded) ? $decoded : [];
+                        } elseif (is_array($value)) {
+                            $existingValues = $value;
+                        }
+                    }
+                    // Create choices from existing values (value => value)
+                    $choices = array_combine($existingValues, $existingValues) ?: [];
+
+                    $typeProperties = [
+                        'required'        => $required,
+                        'label'           => $field['label'],
+                        'attr'            => array_merge($attr, [
+                            'class'               => 'form-control',
+                            'data-placeholder'    => $field['label'],
+                            'data-no-results-text' => '',
+                            'data-allow-add'      => 'true',
+                            'onchange'            => 'Mautic.updateCollectionField(this)',
+                        ]),
+                        'mapped'          => $mapped,
+                        'constraints'     => $constraints,
+                        'value_type'      => $properties['value_type'] ?? 'string',
+                        'choices'         => $choices,
+                        'placeholder'     => $field['label'],
+                        'no_results_text' => '',
+                    ];
+                    // Pass the array of values for the form
+                    $typeProperties['data'] = $existingValues;
+                    $builder->add($alias, $type, $typeProperties);
                     break;
                 case CountryType::class:
                 case RegionType::class:

@@ -137,8 +137,13 @@ trait CustomFieldEntityTrait
                 }
             }
         } elseif (is_array($value)) {
-            // Flatten the array
-            $value = implode('|', $value);
+            // Check if this is a collection type field - use JSON encoding
+            if ($field && 'collection' === $field['type']) {
+                $value = json_encode(array_values(array_filter($value, fn ($v) => '' !== $v && null !== $v)));
+            } else {
+                // Existing behavior for multiselect - flatten with pipe
+                $value = implode('|', $value);
+            }
         }
 
         if ($field) {

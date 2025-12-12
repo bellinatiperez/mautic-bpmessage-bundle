@@ -74,6 +74,10 @@
                                 'selectTemplate': lookupTemplate,
                                 'type': 'lookup',
                             }) }}
+                        {% elseif 'collection' == type %}
+                            {{ include('@MauticLead/Field/properties_collection.html.twig', {
+                                'properties': properties,
+                            }) }}
                         {% endif %}
                     </div>
                     {{ form_errors(form.properties) }}
@@ -149,6 +153,10 @@
           'form': null,
           'selectTemplate': selectTemplate,
           'type': 'lookup',
+      }) }}
+
+      {{ include('@MauticLead/Field/properties_collection.html.twig', {
+          'properties': {},
       }) }}
     </div>
 {% endif %}

@@ -172,6 +172,7 @@ Mautic.leadOnLoad = function (container, response) {
     });
 
     Mautic.lazyLoadContactStatsOnLeadLoad();
+
 };
 
 Mautic.leadTimelineOnLoad = function (container, response) {
@@ -938,6 +939,7 @@ Mautic.updateLeadFieldProperties = function(selectedVal, onload) {
             isSelect = true;
             break;
         case 'textarea':
+        case 'collection':
             html = mQuery('#field-templates .default_template_textarea').html();
             break;
         default:
@@ -1807,4 +1809,27 @@ Mautic.lazyLoadContactStatsOnLeadLoad = function() {
         response.target = containerId;
         Mautic.processPageContent(response);
     });
+};
+
+/**
+ * Update collection field - handles adding new values to the select
+ * Similar to tags behavior but without server-side persistence of options
+ *
+ * @param el - The select element
+ */
+Mautic.updateCollectionField = function(el) {
+    var $select = mQuery(el);
+    var selectedValues = $select.val() || [];
+
+    // Check if there are any new values (non-existing options)
+    mQuery('#' + $select.attr('id') + ' :selected').each(function(i, selected) {
+        var val = mQuery(selected).val();
+        // If the value doesn't exist as an option, add it
+        if ($select.find('option[value="' + val + '"]').length === 0) {
+            $select.append(mQuery('<option></option>').attr('value', val).text(val));
+        }
+    });
+
+    // Trigger update for Chosen
+    $select.trigger('chosen:updated');
 };

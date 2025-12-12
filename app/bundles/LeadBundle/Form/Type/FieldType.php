@@ -436,6 +436,23 @@ class FieldType extends AbstractType
                         ]
                     );
                     break;
+                case 'collection':
+                    // Collection field - default value is textarea for JSON input
+                    $form->add(
+                        'defaultValue',
+                        TextareaType::class,
+                        [
+                            'label'      => 'mautic.core.defaultvalue',
+                            'label_attr' => ['class' => 'control-label'],
+                            'attr'       => [
+                                'class'       => 'form-control',
+                                'placeholder' => '["value1", "value2", "value3"]',
+                            ],
+                            'required' => false,
+                            'disabled' => $disableDefaultValue,
+                        ]
+                    );
+                    break;
             }
 
             if (in_array($type, $this->indexableFieldsWithLimits)) {

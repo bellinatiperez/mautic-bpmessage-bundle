@@ -90,6 +90,11 @@ class FormFieldHelper extends AbstractFormFieldHelper
         'locale' => [
             'properties' => [],
         ],
+        'collection' => [
+            'properties' => [
+                'value_type' => [],
+            ],
+        ],
     ];
 
     /**

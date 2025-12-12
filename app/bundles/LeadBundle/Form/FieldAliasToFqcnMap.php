@@ -3,6 +3,7 @@
 namespace Mautic\LeadBundle\Form;
 
 use Mautic\CoreBundle\Form\Type\BooleanType;
+use Mautic\CoreBundle\Form\Type\CollectionFieldType;
 use Mautic\CoreBundle\Form\Type\CountryType;
 use Mautic\CoreBundle\Form\Type\LocaleType;
 use Mautic\CoreBundle\Form\Type\LookupType;
@@ -33,6 +34,7 @@ final class FieldAliasToFqcnMap
      */
     public const MAP = [
         'boolean'     => BooleanType::class,
+        'collection'  => CollectionFieldType::class,
         'country'     => CountryType::class,
         'date'        => DateType::class,
         'datetime'    => DateTimeType::class,

@@ -9,11 +9,13 @@ use Mautic\CoreBundle\Helper\DateTimeHelper;
  */
 class CustomFieldHelper
 {
-    public const TYPE_BOOLEAN = 'boolean';
+    public const TYPE_BOOLEAN    = 'boolean';
 
-    public const TYPE_NUMBER  = 'number';
+    public const TYPE_NUMBER     = 'number';
 
-    public const TYPE_SELECT  = 'select';
+    public const TYPE_SELECT     = 'select';
+
+    public const TYPE_COLLECTION = 'collection';
 
     /**
      * Fixes value type for specific field types.
@@ -31,10 +33,11 @@ class CustomFieldHelper
         }
 
         return match ($type) {
-            self::TYPE_NUMBER  => (float) $value,
-            self::TYPE_BOOLEAN => (bool) $value,
-            self::TYPE_SELECT  => (string) $value,
-            default            => $value,
+            self::TYPE_NUMBER     => (float) $value,
+            self::TYPE_BOOLEAN    => (bool) $value,
+            self::TYPE_SELECT     => (string) $value,
+            self::TYPE_COLLECTION => $value, // JSON string - keep as is
+            default               => $value,
         };
     }
 

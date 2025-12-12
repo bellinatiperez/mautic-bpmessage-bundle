@@ -15,6 +15,8 @@ class CustomFieldValueHelper
 
     public const TYPE_MULTISELECT = 'multiselect';
 
+    public const TYPE_COLLECTION  = 'collection';
+
     public static function normalizeValues(array $customFields): array
     {
         if (isset($customFields['core'])) {
@@ -107,6 +109,14 @@ class CustomFieldValueHelper
                         $val = self::setValueFromPropertiesList($properties, $val);
                     }
                     $value = implode('|', $values);
+                    break;
+                case self::TYPE_COLLECTION:
+                    if (is_string($value) && !empty($value)) {
+                        $decoded = json_decode($value, true);
+                        if (is_array($decoded)) {
+                            $value = implode(', ', $decoded);
+                        }
+                    }
                     break;
             }
         }

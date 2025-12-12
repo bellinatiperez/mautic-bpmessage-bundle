@@ -1,0 +1,21 @@
+{% set properties = properties|default({}) %}
+<div class="collection">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label class="control-label">{{ 'mautic.lead.field.collection.value_type'|trans }}</label>
+                <select name="leadfield[properties][value_type]" class="form-control">
+                    <option value="string" {% if properties.value_type|default('string') == 'string' %}selected{% endif %}>
+                        {{ 'mautic.lead.field.collection.type.string'|trans }}
+                    </option>
+                    <option value="integer" {% if properties.value_type|default('') == 'integer' %}selected{% endif %}>
+                        {{ 'mautic.lead.field.collection.type.integer'|trans }}
+                    </option>
+                    <option value="float" {% if properties.value_type|default('') == 'float' %}selected{% endif %}>
+                        {{ 'mautic.lead.field.collection.type.float'|trans }}
+                    </option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>

@@ -3,6 +3,7 @@
 namespace Mautic\CoreBundle\Form;
 
 use Mautic\CoreBundle\Form\Type\BooleanType;
+use Mautic\CoreBundle\Form\Type\CollectionFieldType;
 use Mautic\CoreBundle\Form\Type\CountryType;
 use Mautic\CoreBundle\Form\Type\LocaleType;
 use Mautic\CoreBundle\Form\Type\MultiselectType;
@@ -150,6 +151,24 @@ trait RequestTrait
                 case HtmlType::class:
                     $masks[$name] = 'html';
                     break;
+                case CollectionFieldType::class:
+                    // Collection fields accept arrays or JSON strings - ensure it's an array for the select
+                    if (is_string($params[$name])) {
+                        // Try to decode JSON string to array
+                        $decoded = json_decode($params[$name], true);
+                        if (is_array($decoded)) {
+                            $params[$name] = $decoded;
+                        } elseif (str_contains($params[$name], '|')) {
+                            $params[$name] = array_filter(array_map('trim', explode('|', $params[$name])));
+                        } elseif (str_contains($params[$name], ',')) {
+                            $params[$name] = array_filter(array_map('trim', explode(',', $params[$name])));
+                        } else {
+                            $params[$name] = $params[$name] ? [$params[$name]] : [];
+                        }
+                    } elseif (!is_array($params[$name])) {
+                        $params[$name] = [];
+                    }
+                    break;
             }
         }
 
@@ -223,6 +242,31 @@ trait RequestTrait
                 break;
             case 'email':
                 $fieldData[$leadField['alias']] = InputHelper::email($fieldData[$leadField['alias']]);
+                break;
+            case 'collection':
+                // Collection fields accept arrays or JSON strings
+                $value = $fieldData[$leadField['alias']];
+                if (is_string($value) && !empty($value)) {
+                    // Try to decode if it's a JSON string
+                    $decoded = json_decode($value, true);
+                    if (is_array($decoded)) {
+                        // Already JSON array - encode back for storage
+                        $fieldData[$leadField['alias']] = json_encode(array_values(array_filter($decoded, fn ($v) => '' !== $v && null !== $v)));
+                    } else {
+                        // Might be comma or newline separated
+                        if (str_contains($value, "\n") || str_contains($value, "\r")) {
+                            $parts = preg_split('/\r\n|\r|\n/', $value);
+                        } else {
+                            $parts = explode(',', $value);
+                        }
+                        $parts = array_values(array_filter(array_map('trim', $parts), fn ($v) => '' !== $v));
+                        $fieldData[$leadField['alias']] = empty($parts) ? null : json_encode($parts);
+                    }
+                } elseif (is_array($value)) {
+                    // Array - encode to JSON
+                    $value = array_values(array_filter($value, fn ($v) => '' !== $v && null !== $v));
+                    $fieldData[$leadField['alias']] = empty($value) ? null : json_encode($value);
+                }
                 break;
         }
     }

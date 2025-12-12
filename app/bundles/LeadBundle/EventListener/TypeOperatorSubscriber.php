@@ -83,6 +83,9 @@ final class TypeOperatorSubscriber implements EventSubscriberInterface
         foreach (['lookup', 'text', 'email', 'url', 'tel'] as $textAlias) {
             $event->setOperatorsForFieldType($textAlias, $this->typeOperators['text']);
         }
+
+        // Collection type operators
+        $event->setOperatorsForFieldType('collection', $this->typeOperators['collection'] ?? $this->typeOperators['text']);
     }
 
     public function onTypeListCollect(ListFieldChoicesEvent $event): void

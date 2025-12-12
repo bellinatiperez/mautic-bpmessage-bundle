@@ -72,6 +72,19 @@ trait OperatorListTrait
                 OperatorOptions::NOT_EMPTY,
             ],
         ],
+        'collection' => [
+            'include' => [
+                OperatorOptions::EMPTY,
+                OperatorOptions::NOT_EMPTY,
+                OperatorOptions::LIKE,
+                OperatorOptions::NOT_LIKE,
+                OperatorOptions::REGEXP,
+                OperatorOptions::NOT_REGEXP,
+                OperatorOptions::STARTS_WITH,
+                OperatorOptions::ENDS_WITH,
+                OperatorOptions::CONTAINS,
+            ],
+        ],
         'date' => [
             'include' => [
                 OperatorOptions::EQUAL_TO,

@@ -59,6 +59,7 @@ class SchemaDefinition
                 $options['length'] = $length;
                 break;
             case 'multiselect':
+            case 'collection':
                 $schemaType        = 'text';
                 $options['length'] = 65535;
                 break;
