@@ -33,7 +33,7 @@ permissions:
 
 jobs:
     sync:
-        if: github.repository == 'mautic/mautic'
+        if: github.repository == 'bellinatiperez/mautic'
         runs-on: ubuntu-latest
         strategy:
             matrix:
@@ -84,7 +84,7 @@ jobs:
                     - theme-welcome
                     - theme-attract
                     - theme-creative
-        name: Sync commits into mautic/${{ matrix.config }}
+        name: Sync commits into bellinatiperez/${{ matrix.config }}
         steps:
             -   uses: actions/checkout@v4
                 with:
@@ -95,8 +95,8 @@ jobs:
             -   uses: frankdejonge/use-github-token@1.0.1
                 with:
                     authentication: 'username:${{ secrets.ACCESS_TOKEN }}'
-                    user_name: 'Mautic CI'
-                    user_email: 'ci@mautic.org'
+                    user_name: 'BellinatiPerez CI'
+                    user_email: 'ci@bellinatiperez.com'
 
             # Cache the splitsh executable to speedup future runs
             -   name: Cache splitsh-lite

@@ -1,0 +1,3 @@
+[submodule "plugins/MauticBpMessageBundle"]
+	path = plugins/MauticBpMessageBundle
+	url = https://github.com/bellinatiperez/mautic-bpmessage-bundle.git

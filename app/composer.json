@@ -1,8 +1,8 @@
 {
-  "name": "mautic/core-lib",
+  "name": "bellinatiperez/core-lib",
   "license": "GPL-3.0",
   "type": "mautic-core",
-  "description": "Mautic Open Source Distribution",
+  "description": "Mautic Open Source Distribution - BellinatiPerez Fork",
   "autoload": {
     "psr-4": {
       "Mautic\\": "bundles/",
