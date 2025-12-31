@@ -1,3 +1,9 @@
 [submodule "plugins/MauticBpMessageBundle"]
 	path = plugins/MauticBpMessageBundle
 	url = https://github.com/bellinatiperez/mautic-bpmessage-bundle.git
+[submodule "plugins/MauticAspectFileBundle"]
+	path = plugins/MauticAspectFileBundle
+	url = https://github.com/bellinatiperez/mautic-aspect-file-bundle.git
+[submodule "plugins/MauticCampaignWatchBundle"]
+	path = plugins/MauticCampaignWatchBundle
+	url = https://github.com/bellinatiperez/mautic-campaign-watch-bundle.git
