@@ -428,6 +428,7 @@ class MessageMapper
      *
      * If the field is a collection (JSON array), returns multiple phone entries.
      * If the field is a simple string, returns a single phone entry.
+     * When phone_limit > 0 is configured, limits the number of phones returned for collection fields.
      *
      * @return array Array of ['areaCode' => string, 'phone' => string]
      */
@@ -452,10 +453,14 @@ class MessageMapper
             return [];
         }
 
+        // Get phone limit from config (0 = no limit)
+        $phoneLimit = (int) ($config['phone_limit'] ?? 0);
+
         $this->logger->debug('BpMessage: Extracting phones from field', [
             'lead_id'     => $lead->getId(),
             'field_alias' => $fieldAlias,
             'field_value' => $fieldValue,
+            'phone_limit' => $phoneLimit,
         ]);
 
         // Check if it's a JSON array (collection field)
@@ -469,6 +474,16 @@ class MessageMapper
                     }
                 }
 
+                // Apply phone limit if configured (only for collection fields)
+                if ($phoneLimit > 0 && count($phones) > $phoneLimit) {
+                    $this->logger->debug('BpMessage: Applying phone limit to collection', [
+                        'lead_id'       => $lead->getId(),
+                        'original_count' => count($phones),
+                        'limit'         => $phoneLimit,
+                    ]);
+                    $phones = array_slice($phones, 0, $phoneLimit);
+                }
+
                 $this->logger->debug('BpMessage: Extracted phones from collection', [
                     'lead_id'     => $lead->getId(),
                     'phone_count' => count($phones),
@@ -478,7 +493,7 @@ class MessageMapper
             }
         }
 
-        // Single value
+        // Single value - phone_limit does not apply
         return [$this->normalizePhone((string) $fieldValue)];
     }
 

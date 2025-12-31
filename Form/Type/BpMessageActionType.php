@@ -126,6 +126,24 @@ class BpMessageActionType extends AbstractType
             ]
         );
 
+        // Phone Limit - limit number of dispatches for collection fields
+        // Always visible, but only applies to collection type fields
+        $builder->add(
+            'phone_limit',
+            IntegerType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.phone_limit',
+                'label_attr' => ['class' => 'control-label'],
+                'attr'       => [
+                    'class'       => 'form-control',
+                    'tooltip'     => 'mautic.bpmessage.form.phone_limit.tooltip',
+                    'placeholder' => '0',
+                    'min'         => 0,
+                ],
+                'required' => false,
+            ]
+        );
+
         // Set default value for phone_field when creating new action
         $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event) {
             $data = $event->getData();
