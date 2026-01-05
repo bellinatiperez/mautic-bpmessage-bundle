@@ -352,6 +352,161 @@ class EmailMessageMapper
     }
 
     /**
+     * Extract email addresses from a selected contact field.
+     *
+     * If the field is a collection (JSON array), returns multiple email addresses.
+     * If the field is a simple string, returns a single email address.
+     * When email_limit > 0 is configured, limits the number of emails returned for collection fields.
+     *
+     * @return array Array of email addresses (strings)
+     */
+    public function extractEmailsFromField(Lead $lead, array $config): array
+    {
+        $fieldAlias = $config['email_field'] ?? null;
+        if (empty($fieldAlias)) {
+            // Fallback to default email field
+            $email = $lead->getEmail();
+            if (!empty($email)) {
+                return [$email];
+            }
+            $this->logger->debug('BpMessage Email: No email_field configured and lead has no email', [
+                'lead_id' => $lead->getId(),
+            ]);
+
+            return [];
+        }
+
+        // If the field is the standard 'email' field, use getEmail()
+        if ('email' === $fieldAlias) {
+            $email = $lead->getEmail();
+            if (!empty($email)) {
+                return [$email];
+            }
+
+            return [];
+        }
+
+        $fieldValue = $lead->getFieldValue($fieldAlias);
+        if (empty($fieldValue)) {
+            $this->logger->debug('BpMessage Email: Email field is empty', [
+                'lead_id'     => $lead->getId(),
+                'field_alias' => $fieldAlias,
+            ]);
+
+            return [];
+        }
+
+        // Get email limit from config (0 = no limit)
+        $emailLimit = (int) ($config['email_limit'] ?? 0);
+
+        $this->logger->debug('BpMessage Email: Extracting emails from field', [
+            'lead_id'     => $lead->getId(),
+            'field_alias' => $fieldAlias,
+            'field_value' => $fieldValue,
+            'email_limit' => $emailLimit,
+        ]);
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
+            $decoded = json_decode($fieldValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                $emails = [];
+                foreach ($decoded as $email) {
+                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $emails[] = trim((string) $email);
+                    }
+                }
+
+                // Apply email limit if configured (only for collection fields)
+                if ($emailLimit > 0 && count($emails) > $emailLimit) {
+                    $this->logger->debug('BpMessage Email: Applying email limit to collection', [
+                        'lead_id'        => $lead->getId(),
+                        'original_count' => count($emails),
+                        'limit'          => $emailLimit,
+                    ]);
+                    $emails = array_slice($emails, 0, $emailLimit);
+                }
+
+                $this->logger->debug('BpMessage Email: Extracted emails from collection', [
+                    'lead_id'     => $lead->getId(),
+                    'email_count' => count($emails),
+                ]);
+
+                return $emails;
+            }
+        }
+
+        // Single value - email_limit does not apply
+        if (filter_var($fieldValue, FILTER_VALIDATE_EMAIL)) {
+            return [trim((string) $fieldValue)];
+        }
+
+        return [];
+    }
+
+    /**
+     * Map a Lead to BpMessage email format with a specific email address.
+     *
+     * @param string            $emailTo Specific email address to use
+     * @param array             $config  Action configuration
+     * @param BpMessageLot|null $lot     Optional lot to get book_business_foreign_id from
+     *
+     * @return array BpMessage email data
+     */
+    public function mapLeadToEmailWithAddress(Lead $lead, string $emailTo, array $config, Campaign $campaign, ?BpMessageLot $lot = null): array
+    {
+        // Get contact values for token replacement
+        $contactValues = $this->getContactValues($lead);
+
+        // Build base email message
+        $email = [
+            'control' => $config['control'] ?? true,
+            'from'    => $this->processTokens($config['email_from'] ?? '', $contactValues),
+            'to'      => $emailTo,
+            'subject' => $this->processTokens($config['email_subject'] ?? '', $contactValues),
+            'body'    => $this->processTokens($config['email_body'] ?? '', $contactValues),
+        ];
+
+        // Get book_business_foreign_id from lot (if available) or config
+        $bookBusinessForeignId = null;
+        if ($lot && $lot->getBookBusinessForeignId()) {
+            $bookBusinessForeignId = $lot->getBookBusinessForeignId();
+        } elseif (!empty($config['book_business_foreign_id'])) {
+            $bookBusinessForeignId = $config['book_business_foreign_id'];
+        }
+
+        // Only add idForeignBookBusiness if it's provided and not empty
+        if (!empty($bookBusinessForeignId)) {
+            $email['idForeignBookBusiness'] = $bookBusinessForeignId;
+        }
+
+        // Add optional CC
+        if (!empty($config['email_cc'])) {
+            $email['cc'] = $this->processTokens($config['email_cc'], $contactValues);
+        }
+
+        // Process additional_data and merge into email (contract, cpfCnpjReceiver, etc)
+        $additionalData = $this->processAdditionalData($lead, $config);
+        if (!empty($additionalData)) {
+            $email = array_merge($email, $additionalData);
+        }
+
+        // Process email_variables
+        $emailVariables = $this->processEmailVariables($lead, $config);
+        if (!empty($emailVariables)) {
+            $email['variables'] = $emailVariables;
+        }
+
+        // Process attachments
+        $attachments = $this->processAttachments($lead, $config);
+        if (!empty($attachments)) {
+            $email['attachments'] = $attachments;
+        }
+
+        return $email;
+    }
+
+    /**
      * Validate that a lead has all required fields for BpMessage email.
      *
      * @return array ['valid' => bool, 'errors' => string[]]
@@ -373,11 +528,8 @@ class EmailMessageMapper
             $errors[] = 'Email body is required';
         }
 
-        // Check if lead has email
-        $to = $config['email_to'] ?? $lead->getEmail();
-        if (empty($to)) {
-            $errors[] = 'Lead email address (to) is required';
-        }
+        // Note: Email validation removed - contacts without email are now registered
+        // in the lot queue with FAILED status instead of failing validation
 
         return [
             'valid'  => empty($errors),

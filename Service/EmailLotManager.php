@@ -200,24 +200,34 @@ class EmailLotManager
         string $status = 'PENDING',
         ?string $errorMessage = null,
     ): BpMessageQueue {
-        // Check if lead is already queued
+        // Get the email address from payload for duplicate checking
+        $emailTo = $emailData['to'] ?? '';
+
+        // Check if this specific email is already queued (allows multiple emails per lead for Collection fields)
         $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('COUNT(q.id)')
+        $qb->select('q')
             ->from(BpMessageQueue::class, 'q')
             ->where('q.lot = :lot')
             ->andWhere('q.lead = :lead')
             ->setParameter('lot', $lot)
             ->setParameter('lead', $lead);
 
-        $count = (int) $qb->getQuery()->getSingleScalarResult();
+        $existingQueues = $qb->getQuery()->getResult();
 
-        if ($count > 0) {
-            $this->logger->warning('BpMessage Email: Lead already queued', [
-                'lot_id'  => $lot->getId(),
-                'lead_id' => $lead->getId(),
-            ]);
+        // Check if this exact email address is already queued
+        foreach ($existingQueues as $existingQueue) {
+            $existingPayload = $existingQueue->getPayloadArray();
+            $existingTo      = $existingPayload['to'] ?? '';
 
-            throw new \RuntimeException("Lead {$lead->getId()} is already queued for lot {$lot->getId()}");
+            if ($existingTo === $emailTo) {
+                $this->logger->warning('BpMessage Email: Email already queued for this lead', [
+                    'lot_id'   => $lot->getId(),
+                    'lead_id'  => $lead->getId(),
+                    'email_to' => $emailTo,
+                ]);
+
+                throw new \RuntimeException("Email {$emailTo} for Lead {$lead->getId()} is already queued for lot {$lot->getId()}");
+            }
         }
 
         $queue = new BpMessageQueue();

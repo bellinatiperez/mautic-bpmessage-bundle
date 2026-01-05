@@ -42,7 +42,7 @@ class BpMessageEmailModel
     /**
      * Send an email for a lead (called from campaign action).
      *
-     * Always registers the contact to the lot queue.
+     * Supports Collection fields - if email_field is a Collection, one email is queued for each address.
      * If the contact has no email address, marks as FAILED in the queue only (not failing the campaign event).
      *
      * @param array $config Campaign action configuration
@@ -74,49 +74,56 @@ class BpMessageEmailModel
             // Get or create active email lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Map lead to email format (passing lot for book_business_foreign_id)
-            $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign, $lot);
+            // Extract emails from the configured field (supports Collection fields)
+            $emails = $this->messageMapper->extractEmailsFromField($lead, $config);
 
-            // Check if lead has email address (check AFTER mapping, as tokens are processed there)
-            $emailTo = $emailData['to'] ?? '';
+            if (empty($emails)) {
+                // No emails found - queue as FAILED for metrics tracking
+                $emailData    = $this->messageMapper->mapLeadToEmailWithAddress($lead, '', $config, $campaign, $lot);
+                $errorMessage = 'Contato sem email';
 
-            if (!empty($emailTo)) {
-                // Queue email normally (PENDING status)
-                $this->lotManager->queueEmail($lot, $lead, $emailData);
+                $this->lotManager->queueEmailWithStatus(
+                    $lot,
+                    $lead,
+                    $emailData,
+                    'FAILED',
+                    $errorMessage
+                );
 
-                $this->logger->info('BpMessage Email: Email queued successfully', [
+                $this->logger->warning('BpMessage Email: Contact queued as FAILED - no email address', [
                     'lead_id'     => $lead->getId(),
                     'lot_id'      => $lot->getId(),
                     'campaign_id' => $campaign->getId(),
                 ]);
 
+                // Return success to campaign - contact is registered but marked as failed
                 return [
                     'success' => true,
-                    'message' => 'Email queued successfully',
+                    'message' => 'Contact registered (no email - marked as failed)',
                 ];
             }
 
-            // No email - queue as FAILED for metrics tracking
-            $errorMessage = 'Contato sem email';
+            // Queue one email for each address found
+            $queuedCount = 0;
+            foreach ($emails as $emailTo) {
+                // Map lead to email format with specific email address
+                $emailData = $this->messageMapper->mapLeadToEmailWithAddress($lead, $emailTo, $config, $campaign, $lot);
 
-            $this->lotManager->queueEmailWithStatus(
-                $lot,
-                $lead,
-                $emailData,
-                'FAILED',
-                $errorMessage
-            );
+                // Queue email normally (PENDING status)
+                $this->lotManager->queueEmail($lot, $lead, $emailData);
+                ++$queuedCount;
 
-            $this->logger->warning('BpMessage Email: Contact queued as FAILED - no email address', [
-                'lead_id'     => $lead->getId(),
-                'lot_id'      => $lot->getId(),
-                'campaign_id' => $campaign->getId(),
-            ]);
+                $this->logger->info('BpMessage Email: Email queued successfully', [
+                    'lead_id'     => $lead->getId(),
+                    'lot_id'      => $lot->getId(),
+                    'campaign_id' => $campaign->getId(),
+                    'email_to'    => $emailTo,
+                ]);
+            }
 
-            // Return success to campaign - contact is registered but marked as failed
             return [
                 'success' => true,
-                'message' => 'Contact registered (no email - marked as failed)',
+                'message' => sprintf('%d email(s) queued successfully', $queuedCount),
             ];
         } catch (\Exception $e) {
             $this->logger->error('BpMessage Email: Failed to send email', [

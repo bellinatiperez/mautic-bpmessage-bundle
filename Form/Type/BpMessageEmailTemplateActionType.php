@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace MauticPlugin\MauticBpMessageBundle\Form\Type;
 
 use Mautic\EmailBundle\Form\Type\EmailListType;
+use Mautic\LeadBundle\Form\Type\LeadFieldsType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
 use Symfony\Component\Validator\Constraints\NotBlank;
 
 /**
@@ -65,19 +68,21 @@ class BpMessageEmailTemplateActionType extends AbstractType
             ]
         );
 
-        // Optional CRM fields
+        // CRM fields
         $builder->add(
             'crm_id',
             IntegerType::class,
             [
-                'required'   => true,
                 'label'      => 'mautic.bpmessage.form.crm_id',
                 'label_attr' => ['class' => 'control-label'],
                 'attr'       => [
                     'class'   => 'form-control',
                     'tooltip' => 'mautic.bpmessage.form.crm_id.tooltip',
                 ],
-                'required' => false,
+                'required'    => true,
+                'constraints' => [
+                    new NotBlank(['message' => 'mautic.bpmessage.crm_id.notblank']),
+                ],
             ]
         );
 
@@ -85,14 +90,16 @@ class BpMessageEmailTemplateActionType extends AbstractType
             'book_business_foreign_id',
             TextType::class,
             [
-                'required'   => true,
                 'label'      => 'mautic.bpmessage.form.book_business_foreign_id',
                 'label_attr' => ['class' => 'control-label'],
                 'attr'       => [
                     'class'   => 'form-control',
                     'tooltip' => 'mautic.bpmessage.form.book_business_foreign_id.tooltip',
                 ],
-                'required' => false,
+                'required'    => true,
+                'constraints' => [
+                    new NotBlank(['message' => 'mautic.bpmessage.book_business_foreign_id.notblank']),
+                ],
             ]
         );
 
@@ -126,21 +133,48 @@ class BpMessageEmailTemplateActionType extends AbstractType
             ]
         );
 
-        // Email To Override (optional)
+        // Email Field - select contact field containing email address(es)
         $builder->add(
-            'email_to',
-            TextType::class,
+            'email_field',
+            LeadFieldsType::class,
             [
-                'label'      => 'mautic.bpmessage.form.email_to_override',
+                'label'      => 'mautic.bpmessage.form.email_field',
+                'label_attr' => ['class' => 'control-label'],
+                'attr'       => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.email_field.tooltip',
+                ],
+                'required'            => true,
+                'with_tags'           => false,
+                'with_company_fields' => false,
+            ]
+        );
+
+        // Email Limit - limit number of dispatches for collection fields
+        $builder->add(
+            'email_limit',
+            IntegerType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.email_limit',
                 'label_attr' => ['class' => 'control-label'],
                 'attr'       => [
                     'class'       => 'form-control',
-                    'tooltip'     => 'mautic.bpmessage.form.email_to_override.tooltip',
-                    'placeholder' => '{contactfield=email}',
+                    'tooltip'     => 'mautic.bpmessage.form.email_limit.tooltip',
+                    'placeholder' => '0',
+                    'min'         => 0,
                 ],
                 'required' => false,
             ]
         );
+
+        // Set default value for email_field when creating new action
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event) {
+            $data = $event->getData();
+            if (is_array($data) && empty($data['email_field'])) {
+                $data['email_field'] = 'email';
+                $event->setData($data);
+            }
+        });
 
         // Email Template Selection
         $builder->add(

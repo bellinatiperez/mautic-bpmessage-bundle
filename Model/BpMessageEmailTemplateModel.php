@@ -41,7 +41,7 @@ class BpMessageEmailTemplateModel
     /**
      * Send an email using a template for a lead (called from campaign action).
      *
-     * Always registers the contact to the lot queue.
+     * Supports Collection fields - if email_field is a Collection, one email is queued for each address.
      * If the contact has no email address, marks as FAILED in the queue only (not failing the campaign event).
      *
      * @param array $config Campaign action configuration
@@ -88,50 +88,59 @@ class BpMessageEmailTemplateModel
             // Get or create active email lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Map lead to email format (with template rendering, passing lot for book_business_foreign_id)
-            $emailData = $this->messageMapper->mapLeadToEmail($lead, $config, $campaign, $lot);
+            // Extract emails from the configured field (supports Collection fields)
+            $emails = $this->messageMapper->extractEmailsFromField($lead, $config);
 
-            // Check if lead has email address (check AFTER mapping, as tokens are processed there)
-            $emailTo = $emailData['to'] ?? '';
+            $templateId = is_array($config['email_template']) ? reset($config['email_template']) : $config['email_template'];
 
-            if (!empty($emailTo)) {
+            if (empty($emails)) {
+                // No emails found - queue as FAILED for metrics tracking
+                $emailData    = $this->messageMapper->mapLeadToEmailWithAddress($lead, '', $config, $campaign, $lot);
+                $errorMessage = 'Contato sem email';
+
+                $this->lotManager->queueEmailWithStatus(
+                    $lot,
+                    $lead,
+                    $emailData,
+                    'FAILED',
+                    $errorMessage
+                );
+
+                $this->logger->warning('BpMessage Email Template: Contact queued as FAILED - no email address', [
+                    'lead_id'     => $lead->getId(),
+                    'lot_id'      => $lot->getId(),
+                    'campaign_id' => $campaign->getId(),
+                ]);
+
+                // Return success to campaign - contact is registered but marked as failed
+                return [
+                    'success' => true,
+                    'message' => 'Contact registered (no email - marked as failed)',
+                ];
+            }
+
+            // Queue one email for each address found
+            $queuedCount = 0;
+            foreach ($emails as $emailTo) {
+                // Map lead to email format with specific email address and template
+                $emailData = $this->messageMapper->mapLeadToEmailWithAddress($lead, $emailTo, $config, $campaign, $lot);
+
                 // Queue email normally (PENDING status)
                 $this->lotManager->queueEmail($lot, $lead, $emailData);
+                ++$queuedCount;
 
                 $this->logger->info('BpMessage Email Template: Email queued successfully', [
                     'lead_id'     => $lead->getId(),
                     'lot_id'      => $lot->getId(),
                     'campaign_id' => $campaign->getId(),
-                    'template_id' => is_array($config['email_template']) ? reset($config['email_template']) : $config['email_template'],
+                    'template_id' => $templateId,
+                    'email_to'    => $emailTo,
                 ]);
-
-                return [
-                    'success' => true,
-                    'message' => 'Email from template queued successfully',
-                ];
             }
 
-            // No email - queue as FAILED for metrics tracking
-            $errorMessage = 'Contato sem email';
-
-            $this->lotManager->queueEmailWithStatus(
-                $lot,
-                $lead,
-                $emailData,
-                'FAILED',
-                $errorMessage
-            );
-
-            $this->logger->warning('BpMessage Email Template: Contact queued as FAILED - no email address', [
-                'lead_id'     => $lead->getId(),
-                'lot_id'      => $lot->getId(),
-                'campaign_id' => $campaign->getId(),
-            ]);
-
-            // Return success to campaign - contact is registered but marked as failed
             return [
                 'success' => true,
-                'message' => 'Contact registered (no email - marked as failed)',
+                'message' => sprintf('%d email(s) from template queued successfully', $queuedCount),
             ];
         } catch (\Exception $e) {
             // Lead-specific errors are caught and returned as failure

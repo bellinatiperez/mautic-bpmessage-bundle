@@ -176,6 +176,7 @@ return [
                     'monolog.logger.mautic',
                     'doctrine.orm.entity_manager',
                     'mautic.helper.mailer',
+                    'mautic.helper.core_parameters',
                 ],
             ],
         ],

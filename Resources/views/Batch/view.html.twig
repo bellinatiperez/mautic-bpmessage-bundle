@@ -200,7 +200,11 @@
                                     </td>
                                     <td>
                                         {% if lot.isEmailLot %}
-                                            {{ lead.email }}
+                                            {% if payload.to is defined and payload.to %}
+                                                {{ payload.to }}
+                                            {% else %}
+                                                {{ lead.email }}
+                                            {% endif %}
                                         {% else %}
                                             {% if payload.areaCode is defined and payload.phone is defined %}
                                                 ({{ payload.areaCode }}) {{ payload.phone }}
