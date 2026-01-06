@@ -148,13 +148,14 @@ class BpMessageEmailModel
      */
     public function processOpenLots(bool $forceClose = false): array
     {
-        // Find all open email lots - those with id_quota_settings = 0 (not used for email)
+        // Find all open email lots - those with lot_type = 'email'
         $qb = $this->em->createQueryBuilder();
         $qb->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.status = :status')
-            ->andWhere('l.idQuotaSettings = 0')
+            ->andWhere('l.lotType = :lotType')
             ->setParameter('status', 'OPEN')
+            ->setParameter('lotType', 'email')
             ->orderBy('l.createdAt', 'ASC');
 
         $lots = $qb->getQuery()->getResult();
@@ -234,10 +235,11 @@ class BpMessageEmailModel
         $qb->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.status = :status')
-            ->andWhere('l.idQuotaSettings = 0') // Email lots
+            ->andWhere('l.lotType = :lotType') // Email lots
             ->andWhere('l.externalLotId IS NULL') // No external lot ID means creation failed
             ->andWhere('l.createdAt < :threshold')
             ->setParameter('status', 'CREATING')
+            ->setParameter('lotType', 'email')
             ->setParameter('threshold', new \DateTime("-{$ageMinutes} minutes"))
             ->orderBy('l.createdAt', 'ASC');
 

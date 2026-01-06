@@ -107,6 +107,7 @@ class EmailLotManager
     {
         // Create lot entity
         $lot = new BpMessageLot();
+        $lot->setLotType('email'); // Explicitly set as email lot
         $lot->setName($config['lot_name'] ?? "Email Campaign {$campaign->getName()}");
 
         $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300);
@@ -577,20 +578,24 @@ class EmailLotManager
             $result = $this->client->createEmailLot($lotData);
 
             if (!$result['success']) {
+                // Translate API error to user-friendly message
+                $friendlyError = $this->translateApiError($result['error'], $lot->getName());
+
                 $lot->setStatus('FAILED');
-                $lot->setErrorMessage($result['error']);
+                $lot->setErrorMessage($friendlyError);
                 $this->entityManager->flush();
 
                 // Force SQL update
                 $connection = $this->entityManager->getConnection();
                 $connection->executeStatement(
                     'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
-                    ['FAILED', $result['error'], $lot->getId()]
+                    ['FAILED', $friendlyError, $lot->getId()]
                 );
 
                 $this->logger->error('BpMessage Email: API CreateEmailLot failed', [
-                    'lot_id' => $lot->getId(),
-                    'error'  => $result['error'],
+                    'lot_id'         => $lot->getId(),
+                    'error'          => $result['error'],
+                    'friendly_error' => $friendlyError,
                 ]);
 
                 return false;
@@ -633,5 +638,34 @@ class EmailLotManager
 
             return false;
         }
+    }
+
+    /**
+     * Translate API error messages to user-friendly messages.
+     *
+     * @param string      $apiError  The original API error message
+     * @param string|null $lotName   Optional lot name for context
+     */
+    private function translateApiError(string $apiError, ?string $lotName = null): string
+    {
+        // Map of API error patterns to friendly messages
+        $errorMappings = [
+            "'Id Quota Settings' must not be equal to '0'" => $lotName
+                ? "Não foi possível criar o lote: '{$lotName}' não possui configuração de cota válida. Entre em contato com o administrador ou selecione outra rota."
+                : 'A rota selecionada não possui configuração de cota válida. Selecione outra rota ou entre em contato com o administrador.',
+            "'Crm Id' must not be equal to '0'" => 'O CRM ID não está configurado corretamente. Verifique a configuração da ação de campanha.',
+            "'Book Business Foreign Id' must not be empty" => 'A Carteira (Book Business Foreign Id) não está configurada. Verifique a configuração da ação de campanha.',
+            'Não há rota padrão configurada' => 'Não há rota padrão configurada para envio de e-mail. Configure uma rota padrão no painel BpMessage.',
+        ];
+
+        // Check each mapping
+        foreach ($errorMappings as $pattern => $friendlyMessage) {
+            if (str_contains($apiError, $pattern)) {
+                return $friendlyMessage;
+            }
+        }
+
+        // Return original error if no mapping found
+        return $apiError;
     }
 }

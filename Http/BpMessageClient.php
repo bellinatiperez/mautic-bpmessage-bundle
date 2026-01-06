@@ -551,6 +551,85 @@ class BpMessageClient
     }
 
     /**
+     * Get available routes from BpMessage API.
+     *
+     * GET /api/ServiceSettings/GetRoutes?BookBusinessForeignId={}&CrmId={}&ServiceTypeId={}
+     *
+     * @param int $bookBusinessForeignId Book business foreign ID (Carteira)
+     * @param int $crmId                 CRM ID
+     * @param int $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
+     *
+     * @return array ['success' => bool, 'routes' => array, 'error' => string|null]
+     */
+    public function getRoutes(int $bookBusinessForeignId, int $crmId, int $serviceTypeId): array
+    {
+        $endpoint = sprintf(
+            '/api/ServiceSettings/GetRoutes?BookBusinessForeignId=%d&CrmId=%d&ServiceTypeId=%d',
+            $bookBusinessForeignId,
+            $crmId,
+            $serviceTypeId
+        );
+
+        $this->logger->info('BpMessage: Getting routes', [
+            'endpoint'              => $endpoint,
+            'bookBusinessForeignId' => $bookBusinessForeignId,
+            'crmId'                 => $crmId,
+            'serviceTypeId'         => $serviceTypeId,
+        ]);
+
+        try {
+            $response = $this->client->get($this->baseUrl.$endpoint, [
+                'headers' => $this->getHeaders(),
+            ]);
+
+            $statusCode = $response->getStatusCode();
+            $body       = (string) $response->getBody();
+
+            $this->logger->info('BpMessage: GetRoutes response', [
+                'status_code' => $statusCode,
+                'body'        => $body,
+            ]);
+
+            if ($statusCode >= 200 && $statusCode < 300) {
+                $routes = json_decode($body, true);
+
+                if (is_array($routes)) {
+                    return [
+                        'success' => true,
+                        'routes'  => $routes,
+                        'error'   => null,
+                    ];
+                }
+
+                return [
+                    'success' => false,
+                    'routes'  => [],
+                    'error'   => 'Invalid response format: '.$body,
+                ];
+            }
+
+            return [
+                'success' => false,
+                'routes'  => [],
+                'error'   => $this->formatApiError($statusCode, $body),
+            ];
+        } catch (GuzzleException $e) {
+            $this->logger->error('BpMessage: GetRoutes failed', [
+                'error'                 => $e->getMessage(),
+                'bookBusinessForeignId' => $bookBusinessForeignId,
+                'crmId'                 => $crmId,
+                'serviceTypeId'         => $serviceTypeId,
+            ]);
+
+            return [
+                'success' => false,
+                'routes'  => [],
+                'error'   => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Test connection to BpMessage API.
      *
      * @return array ['success' => bool, 'error' => string|null]

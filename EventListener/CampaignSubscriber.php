@@ -70,6 +70,7 @@ class CampaignSubscriber implements EventSubscriberInterface
                     'lot_data'          => 'raw',
                     'additional_data'   => 'raw',
                     'message_variables' => 'raw',
+                    'route_data'        => 'raw',
                 ],
                 'channel'        => 'bpmessage',
                 'channelIdField' => 'bpmessage_id',

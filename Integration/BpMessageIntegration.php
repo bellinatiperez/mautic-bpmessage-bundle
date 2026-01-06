@@ -193,6 +193,23 @@ class BpMessageIntegration extends AbstractIntegration
                     ],
                 ]
             );
+
+            $builder->add(
+                'routes_cache_ttl',
+                \Symfony\Component\Form\Extension\Core\Type\IntegerType::class,
+                [
+                    'label'      => 'mautic.bpmessage.integration.routes_cache_ttl',
+                    'label_attr' => ['class' => 'control-label'],
+                    'required'   => false,
+                    'data'       => $data['routes_cache_ttl'] ?? 14400,
+                    'attr'       => [
+                        'class'   => 'form-control',
+                        'tooltip' => 'mautic.bpmessage.integration.routes_cache_ttl.tooltip',
+                        'min'     => 60,
+                        'max'     => 86400,
+                    ],
+                ]
+            );
         }
     }
 
@@ -224,5 +241,15 @@ class BpMessageIntegration extends AbstractIntegration
         $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
 
         return (int) ($featureSettings['default_time_window'] ?? 300);
+    }
+
+    /**
+     * Get routes cache TTL from integration settings.
+     */
+    public function getRoutesCacheTtl(): int
+    {
+        $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
+
+        return (int) ($featureSettings['routes_cache_ttl'] ?? 14400);
     }
 }

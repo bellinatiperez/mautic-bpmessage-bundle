@@ -20,15 +20,81 @@ class LotManager
     private EntityManager $entityManager;
     private BpMessageClient $client;
     private LoggerInterface $logger;
+    private ?RoutesService $routesService = null;
 
     public function __construct(
         EntityManager $entityManager,
         BpMessageClient $client,
         LoggerInterface $logger,
+        ?RoutesService $routesService = null,
     ) {
         $this->entityManager = $entityManager;
         $this->client        = $client;
         $this->logger        = $logger;
+        $this->routesService = $routesService;
+    }
+
+    /**
+     * Set the routes service (for dependency injection).
+     */
+    public function setRoutesService(RoutesService $routesService): void
+    {
+        $this->routesService = $routesService;
+    }
+
+    /**
+     * Resolve idQuotaSettings from the config using GetRoutes API.
+     *
+     * @param array $config Action configuration containing id_service_settings, crm_id, book_business_foreign_id, service_type
+     *
+     * @return int|null The resolved idQuotaSettings or null if not found
+     */
+    private function resolveIdQuotaSettings(array $config): ?int
+    {
+        // Check if we have the required fields to resolve via GetRoutes
+        if (empty($config['id_service_settings']) || empty($config['crm_id']) || empty($config['book_business_foreign_id'])) {
+            $this->logger->warning('BpMessage LotManager: Missing required fields to resolve idQuotaSettings', [
+                'id_service_settings'     => $config['id_service_settings'] ?? null,
+                'crm_id'                  => $config['crm_id'] ?? null,
+                'book_business_foreign_id' => $config['book_business_foreign_id'] ?? null,
+            ]);
+
+            return null;
+        }
+
+        if (null === $this->routesService) {
+            $this->logger->error('BpMessage LotManager: RoutesService not available, cannot resolve idQuotaSettings');
+
+            return null;
+        }
+
+        $idServiceSettings     = (int) $config['id_service_settings'];
+        $crmId                 = (int) $config['crm_id'];
+        $bookBusinessForeignId = (int) $config['book_business_foreign_id'];
+        $serviceType           = (int) ($config['service_type'] ?? 1);
+
+        $idQuotaSettings = $this->routesService->getQuotaSettingsForRoute(
+            $idServiceSettings,
+            $bookBusinessForeignId,
+            $crmId,
+            $serviceType
+        );
+
+        if (null === $idQuotaSettings) {
+            $this->logger->error('BpMessage LotManager: Could not resolve idQuotaSettings for route', [
+                'id_service_settings'      => $idServiceSettings,
+                'crm_id'                   => $crmId,
+                'book_business_foreign_id' => $bookBusinessForeignId,
+                'service_type'             => $serviceType,
+            ]);
+        } else {
+            $this->logger->info('BpMessage LotManager: Resolved idQuotaSettings from GetRoutes', [
+                'id_service_settings' => $idServiceSettings,
+                'id_quota_settings'   => $idQuotaSettings,
+            ]);
+        }
+
+        return $idQuotaSettings;
     }
 
     /**
@@ -40,6 +106,13 @@ class LotManager
      */
     public function getOrCreateActiveLot(Campaign $campaign, array $config): BpMessageLot
     {
+        // Resolve idQuotaSettings from GetRoutes API
+        $idQuotaSettings = $this->resolveIdQuotaSettings($config);
+
+        if (null === $idQuotaSettings) {
+            throw new \RuntimeException('Could not resolve idQuotaSettings for the selected route. Please check CRM ID, Carteira, and Service Type configuration.');
+        }
+
         // Check if there's an open lot for this campaign with matching configuration
         // Lots are unique by: campaignId + idQuotaSettings + idServiceSettings + serviceType
         $qb = $this->entityManager->createQueryBuilder();
@@ -52,13 +125,16 @@ class LotManager
             ->andWhere('l.serviceType = :serviceType')
             ->setParameter('campaignId', $campaign->getId())
             ->setParameter('status', 'OPEN')
-            ->setParameter('idQuotaSettings', (int) $config['id_quota_settings'])
+            ->setParameter('idQuotaSettings', $idQuotaSettings)
             ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
             ->setParameter('serviceType', (int) ($config['service_type'] ?? 2))
             ->orderBy('l.createdAt', 'DESC')
             ->setMaxResults(1);
 
         $lot = $qb->getQuery()->getOneOrNullResult();
+
+        // Store resolved idQuotaSettings in config for createLot
+        $config['_resolved_id_quota_settings'] = $idQuotaSettings;
 
         // Check if lot can be reused: not closed by count or time
         if (null !== $lot && !$lot->shouldCloseByCount() && !$lot->shouldCloseByTime()) {
@@ -108,8 +184,16 @@ class LotManager
      */
     private function createLot(Campaign $campaign, array $config): BpMessageLot
     {
+        // Use pre-resolved idQuotaSettings or resolve it now
+        $idQuotaSettings = $config['_resolved_id_quota_settings'] ?? $this->resolveIdQuotaSettings($config);
+
+        if (null === $idQuotaSettings) {
+            throw new \RuntimeException('Could not resolve idQuotaSettings for lot creation. Please check CRM ID, Carteira, and Service Type configuration.');
+        }
+
         // Create lot entity
         $lot = new BpMessageLot();
+        $lot->setLotType('message'); // Explicitly set as message lot (SMS/WhatsApp/RCS)
         $lot->setName($config['lot_name'] ?? "Campaign {$campaign->getName()}");
 
         $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300);
@@ -120,7 +204,7 @@ class LotManager
         $lot->setEndDate((clone $now)->modify("+{$timeWindow} seconds"));
 
         $lot->setUserCpf('system');
-        $lot->setIdQuotaSettings((int) $config['id_quota_settings']);
+        $lot->setIdQuotaSettings($idQuotaSettings);
         $lot->setIdServiceSettings((int) $config['id_service_settings']);
         $lot->setServiceType((int) ($config['service_type'] ?? 2));
         $lot->setCampaignId($campaign->getId());
@@ -139,11 +223,14 @@ class LotManager
 
         // Save config for API payload creation during processing
         // Dates will be calculated at that time
+        // Include bookBusinessForeignId and crmId for route name lookup on errors
         $lotConfig = [
-            'name'              => $lot->getName(),
-            'user'              => 'system',
-            'idQuotaSettings'   => $lot->getIdQuotaSettings(),
-            'idServiceSettings' => $lot->getIdServiceSettings(),
+            'name'                  => $lot->getName(),
+            'user'                  => 'system',
+            'idQuotaSettings'       => $lot->getIdQuotaSettings(),
+            'idServiceSettings'     => $lot->getIdServiceSettings(),
+            'bookBusinessForeignId' => (int) ($config['book_business_foreign_id'] ?? 0),
+            'crmId'                 => (int) ($config['crm_id'] ?? 0),
         ];
 
         if (!empty($config['image_url'])) {
@@ -579,20 +666,27 @@ class LotManager
             $result = $this->client->createLot($lotData);
 
             if (!$result['success']) {
+                // Get route name for better error message
+                $routeName = $this->getRouteNameForLot($lot);
+
+                // Translate API error to user-friendly message
+                $friendlyError = $this->translateApiError($result['error'], $routeName);
+
                 $lot->setStatus('FAILED');
-                $lot->setErrorMessage($result['error']);
+                $lot->setErrorMessage($friendlyError);
                 $this->entityManager->flush();
 
                 // Force SQL update
                 $connection = $this->entityManager->getConnection();
                 $connection->executeStatement(
                     'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
-                    ['FAILED', $result['error'], $lot->getId()]
+                    ['FAILED', $friendlyError, $lot->getId()]
                 );
 
                 $this->logger->error('BpMessage: API CreateLot failed', [
-                    'lot_id' => $lot->getId(),
-                    'error'  => $result['error'],
+                    'lot_id'         => $lot->getId(),
+                    'error'          => $result['error'],
+                    'friendly_error' => $friendlyError,
                 ]);
 
                 return false;
@@ -741,5 +835,69 @@ class LotManager
 
         // Fallback to default
         return new \DateTime($default);
+    }
+
+    /**
+     * Get route name for a lot using RoutesService.
+     *
+     * @param BpMessageLot $lot The lot to get route name for
+     *
+     * @return string|null The route name, or null if not found
+     */
+    private function getRouteNameForLot(BpMessageLot $lot): ?string
+    {
+        if (null === $this->routesService) {
+            return null;
+        }
+
+        $payload = $lot->getCreateLotPayload();
+        if (empty($payload)) {
+            return null;
+        }
+
+        $idServiceSettings = $lot->getIdServiceSettings();
+        $bookBusinessForeignId = $payload['bookBusinessForeignId'] ?? null;
+        $crmId = $payload['crmId'] ?? null;
+        $serviceType = $lot->getServiceType();
+
+        if (empty($idServiceSettings) || empty($bookBusinessForeignId) || empty($crmId) || empty($serviceType)) {
+            return null;
+        }
+
+        return $this->routesService->getRouteNameByIdServiceSettings(
+            $idServiceSettings,
+            (int) $bookBusinessForeignId,
+            (int) $crmId,
+            $serviceType
+        );
+    }
+
+    /**
+     * Translate API error messages to user-friendly messages.
+     *
+     * @param string      $apiError  The original API error message
+     * @param string|null $routeName Optional route name for context
+     */
+    private function translateApiError(string $apiError, ?string $routeName = null): string
+    {
+        // Map of API error patterns to friendly messages
+        $errorMappings = [
+            "'Id Quota Settings' must not be equal to '0'" => $routeName
+                ? "Não foi possível criar o lote: a rota '{$routeName}' não possui configuração de cota válida. Entre em contato com o administrador ou selecione outra rota."
+                : 'A rota selecionada não possui configuração de cota válida. Selecione outra rota ou entre em contato com o administrador.',
+            "'Crm Id' must not be equal to '0'" => 'O CRM ID não está configurado corretamente. Verifique a configuração da ação de campanha.',
+            "'Book Business Foreign Id' must not be empty" => 'A Carteira (Book Business Foreign Id) não está configurada. Verifique a configuração da ação de campanha.',
+            'Não há rota padrão configurada' => 'Não há rota padrão configurada para este tipo de envio. Configure uma rota padrão no painel BpMessage.',
+        ];
+
+        // Check each mapping
+        foreach ($errorMappings as $pattern => $friendlyMessage) {
+            if (str_contains($apiError, $pattern)) {
+                return $friendlyMessage;
+            }
+        }
+
+        // Return original error if no mapping found
+        return $apiError;
     }
 }

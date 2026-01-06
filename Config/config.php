@@ -39,6 +39,10 @@ return [
                 'path'       => '/bpmessage/lots/process',
                 'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\BatchController::processAction',
             ],
+            'mautic_bpmessage_ajax_routes' => [
+                'path'       => '/bpmessage/ajax/routes',
+                'controller' => 'MauticPlugin\\MauticBpMessageBundle\\Controller\\AjaxController::getRoutesAction',
+            ],
         ],
     ],
 
@@ -73,11 +77,17 @@ return [
                     'database_connection',
                 ],
             ],
+            'mautic.bpmessage.asset.subscriber' => [
+                'class' => MauticPlugin\MauticBpMessageBundle\EventListener\AssetSubscriber::class,
+            ],
         ],
         'forms' => [
             'mautic.bpmessage.form.type.action' => [
                 'class'     => MauticPlugin\MauticBpMessageBundle\Form\Type\BpMessageActionType::class,
-                'arguments' => ['mautic.lead.model.field'],
+                'arguments' => [
+                    'mautic.lead.model.field',
+                    'mautic.bpmessage.service.routes',
+                ],
                 'alias'     => 'bpmessage_action',
             ],
             'mautic.bpmessage.form.type.email_action' => [
@@ -148,6 +158,7 @@ return [
                     'doctrine.orm.entity_manager',
                     'mautic.bpmessage.http.client',
                     'monolog.logger.mautic',
+                    'mautic.bpmessage.service.routes',
                 ],
             ],
             'mautic.bpmessage.service.message_mapper' => [
@@ -179,6 +190,16 @@ return [
                     'mautic.helper.core_parameters',
                 ],
             ],
+            'mautic.bpmessage.service.routes' => [
+                'class'     => MauticPlugin\MauticBpMessageBundle\Service\RoutesService::class,
+                'arguments' => [
+                    'mautic.bpmessage.http.client',
+                    'cache.app',
+                    'monolog.logger.mautic',
+                    'mautic.helper.integration',
+                ],
+                'public' => true,
+            ],
         ],
         'controllers' => [
             'mautic.bpmessage.controller.batch' => [
@@ -192,6 +213,7 @@ return [
                     'mautic.bpmessage.model.email',
                     'router',
                     'mautic.bpmessage.service.lot_manager',
+                    'mautic.bpmessage.service.routes',
                 ],
                 'public' => true,
                 'tags'   => [

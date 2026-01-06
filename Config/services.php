@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
+use Mautic\CoreBundle\DependencyInjection\MauticCoreExtension;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
-return function (ContainerConfigurator $configurator) {
+return function (ContainerConfigurator $configurator): void {
     $services = $configurator->services()
         ->defaults()
-        ->autowire(false)
-        ->autoconfigure(false)
+        ->autowire()
+        ->autoconfigure()
         ->public();
 
-    // Exclude repositories from service container
-    $services->exclude('../Entity/*Repository.php');
+    $excludes = [
+    ];
+
+    // Auto-load all classes in the bundle with autowiring (like MauticSocialBundle)
+    // Note: Entity is already excluded via MauticCoreExtension::DEFAULT_EXCLUDES
+    $services->load('MauticPlugin\\MauticBpMessageBundle\\', '../')
+        ->exclude('../{'.implode(',', array_merge(MauticCoreExtension::DEFAULT_EXCLUDES, $excludes)).'}');
 };

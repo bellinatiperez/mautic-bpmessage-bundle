@@ -138,6 +138,13 @@ class BpMessageLot
     private ?array $createLotPayload = null;
 
     /**
+     * Lot type: 'message' for SMS/WhatsApp/RCS, 'email' for email lots.
+     *
+     * @ORM\Column(name="lot_type", type="string", length=20, nullable=false)
+     */
+    private string $lotType = 'message';
+
+    /**
      * @ORM\OneToMany(targetEntity="BpMessageQueue", mappedBy="lot", cascade={"persist", "remove"}, orphanRemoval=true)
      */
     private Collection $queueItems;
@@ -176,8 +183,10 @@ class BpMessageLot
         $builder->addNamedField('timeWindow', 'integer', 'time_window');
         $builder->addNamedField('errorMessage', 'text', 'error_message', ['nullable' => true]);
         $builder->addNamedField('createLotPayload', 'json', 'create_lot_payload', ['nullable' => true]);
+        $builder->addNamedField('lotType', 'string', 'lot_type', ['length' => 20, 'default' => 'message']);
 
         $builder->addIndex(['status'], 'idx_status');
+        $builder->addIndex(['lot_type'], 'idx_lot_type');
         $builder->addIndex(['created_at'], 'idx_created_at');
         $builder->addIndex(['campaign_id'], 'idx_campaign_id');
     }
@@ -539,11 +548,39 @@ class BpMessageLot
     }
 
     /**
-     * Check if this is an email lot (idQuotaSettings = 0).
-     * Email lots use idQuotaSettings = 0, while message lots (SMS/WhatsApp/RCS) use idQuotaSettings > 0.
+     * Get lot type.
+     */
+    public function getLotType(): string
+    {
+        return $this->lotType;
+    }
+
+    /**
+     * Set lot type.
+     *
+     * @param string $lotType 'message' for SMS/WhatsApp/RCS, 'email' for email lots
+     */
+    public function setLotType(string $lotType): self
+    {
+        $this->lotType = $lotType;
+
+        return $this;
+    }
+
+    /**
+     * Check if this is an email lot.
+     * Uses the explicit lot_type field for reliable detection.
      */
     public function isEmailLot(): bool
     {
-        return 0 === $this->idQuotaSettings;
+        return 'email' === $this->lotType;
+    }
+
+    /**
+     * Check if this is a message lot (SMS/WhatsApp/RCS).
+     */
+    public function isMessageLot(): bool
+    {
+        return 'message' === $this->lotType;
     }
 }

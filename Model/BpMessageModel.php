@@ -55,11 +55,12 @@ class BpMessageModel
         try {
             // Debug: Log config received
             $this->logger->debug('BpMessage: Config received in sendMessage', [
-                'config_keys'         => array_keys($config),
-                'id_quota_settings'   => $config['id_quota_settings'] ?? 'NOT SET',
-                'id_service_settings' => $config['id_service_settings'] ?? 'NOT SET',
-                'phone_field'         => $config['phone_field'] ?? 'NOT SET',
-                'message_text'        => $config['message_text'] ?? 'NOT SET',
+                'config_keys'              => array_keys($config),
+                'crm_id'                   => $config['crm_id'] ?? 'NOT SET',
+                'book_business_foreign_id' => $config['book_business_foreign_id'] ?? 'NOT SET',
+                'id_service_settings'      => $config['id_service_settings'] ?? 'NOT SET',
+                'phone_field'              => $config['phone_field'] ?? 'NOT SET',
+                'message_text'             => $config['message_text'] ?? 'NOT SET',
             ]);
 
             // Get settings from integration
@@ -183,13 +184,14 @@ class BpMessageModel
      */
     public function processOpenLots(bool $forceClose = false): array
     {
-        // Find all open message lots (SMS/WhatsApp/RCS) - those with id_quota_settings > 0
+        // Find all open message lots (SMS/WhatsApp/RCS) - those with lot_type = 'message'
         $qb = $this->em->createQueryBuilder();
         $qb->select('l')
             ->from(BpMessageLot::class, 'l')
             ->where('l.status = :status')
-            ->andWhere('l.idQuotaSettings > 0')
+            ->andWhere('l.lotType = :lotType')
             ->setParameter('status', 'OPEN')
+            ->setParameter('lotType', 'message')
             ->orderBy('l.createdAt', 'ASC');
 
         $lots = $qb->getQuery()->getResult();
@@ -392,9 +394,10 @@ class BpMessageModel
      */
     private function validateConfig(array $config): void
     {
-        // API Base URL is now in plugin settings, not required in config
+        // Required fields for GetRoutes API to resolve idQuotaSettings
         $required = [
-            'id_quota_settings',
+            'crm_id',
+            'book_business_foreign_id',
             'id_service_settings',
         ];
 

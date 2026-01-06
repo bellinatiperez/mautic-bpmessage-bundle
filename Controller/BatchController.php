@@ -12,6 +12,7 @@ use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
 use MauticPlugin\MauticBpMessageBundle\Model\BpMessageEmailModel;
 use MauticPlugin\MauticBpMessageBundle\Model\BpMessageModel;
 use MauticPlugin\MauticBpMessageBundle\Service\LotManager;
+use MauticPlugin\MauticBpMessageBundle\Service\RoutesService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -33,6 +34,7 @@ class BatchController
     private BpMessageEmailModel $bpMessageEmailModel;
     private UrlGeneratorInterface $urlGenerator;
     private LotManager $lotManager;
+    private RoutesService $routesService;
 
     public function __construct(
         ManagerRegistry $doctrine,
@@ -43,6 +45,7 @@ class BatchController
         BpMessageEmailModel $bpMessageEmailModel,
         UrlGeneratorInterface $urlGenerator,
         LotManager $lotManager,
+        RoutesService $routesService,
     ) {
         $this->doctrine            = $doctrine;
         $this->translator          = $translator;
@@ -52,6 +55,7 @@ class BatchController
         $this->bpMessageEmailModel = $bpMessageEmailModel;
         $this->urlGenerator        = $urlGenerator;
         $this->lotManager          = $lotManager;
+        $this->routesService       = $routesService;
     }
 
     /**
@@ -309,10 +313,23 @@ class BatchController
             $statistics[$status] = $stat['count'];
         }
 
+        // Get route name from payload if available
+        $routeName = null;
+        $payload = $lot->getCreateLotPayload();
+        if ($payload && !empty($payload['bookBusinessForeignId']) && !empty($payload['crmId'])) {
+            $routeName = $this->routesService->getRouteNameByIdServiceSettings(
+                $lot->getIdServiceSettings(),
+                (int) $payload['bookBusinessForeignId'],
+                (int) $payload['crmId'],
+                $lot->getServiceType() ?? 1
+            );
+        }
+
         $content = $this->twig->render('@MauticBpMessage/Batch/view.html.twig', [
             'lot'           => $lot,
             'messages'      => $messages,
             'statistics'    => $statistics,
+            'routeName'     => $routeName,
             'activeLink'    => '#mautic_bpmessage_lot_index',
             'mauticContent' => 'bpmessageLot',
         ]);
