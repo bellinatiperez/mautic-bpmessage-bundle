@@ -48,17 +48,20 @@ return [
 
     'menu' => [
         'main' => [
-            'items' => [
-                'mautic.bpmessage.menu.lots' => [
-                    'route'    => 'mautic_bpmessage_lot_index',
-                    'parent'   => 'mautic.core.channels',
-                    'priority' => 63,
-                    'checks'   => [
-                        'integration' => [
-                            'BpMessage' => [
-                                'enabled' => true,
-                            ],
+            'mautic.bpmessage.menu.root' => [
+                'id'        => 'mautic_bpmessage_root',
+                'iconClass' => 'ri-message-2-fill',
+                'priority'  => 63,
+                'checks'    => [
+                    'integration' => [
+                        'BpMessage' => [
+                            'enabled' => true,
                         ],
+                    ],
+                ],
+                'children' => [
+                    'mautic.bpmessage.menu.lots' => [
+                        'route' => 'mautic_bpmessage_lot_index',
                     ],
                 ],
             ],
