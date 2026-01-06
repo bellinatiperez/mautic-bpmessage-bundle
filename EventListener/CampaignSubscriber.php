@@ -126,6 +126,9 @@ class CampaignSubscriber implements EventSubscriberInterface
         $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
 
+        // Add event name to config for lot naming
+        $config['event_name'] = $event->getEvent()->getName();
+
         $this->logger->info('BpMessage: Campaign', [
             'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',
             'campaign_name' => $campaign ? $campaign->getName() : 'NULL',
@@ -201,6 +204,9 @@ class CampaignSubscriber implements EventSubscriberInterface
         $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
 
+        // Add event name to config for lot naming
+        $config['event_name'] = $event->getEvent()->getName();
+
         $this->logger->info('BpMessage Email: Campaign', [
             'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',
             'campaign_name' => $campaign ? $campaign->getName() : 'NULL',
@@ -275,6 +281,9 @@ class CampaignSubscriber implements EventSubscriberInterface
 
         $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
+
+        // Add event name to config for lot naming
+        $config['event_name'] = $event->getEvent()->getName();
 
         $this->logger->info('BpMessage Email Template: Campaign', [
             'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',

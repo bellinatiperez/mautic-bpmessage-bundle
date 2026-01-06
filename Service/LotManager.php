@@ -195,7 +195,9 @@ class LotManager
         // Create lot entity
         $lot = new BpMessageLot();
         $lot->setLotType('message'); // Explicitly set as message lot (SMS/WhatsApp/RCS)
-        $lot->setName($config['lot_name'] ?? "Campaign {$campaign->getName()}");
+        // Use event name if available, otherwise fallback to campaign name
+        $lotName = $config['event_name'] ?? "Campaign {$campaign->getName()}";
+        $lot->setName($lotName);
 
         $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300);
 

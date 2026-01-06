@@ -108,7 +108,9 @@ class EmailLotManager
         // Create lot entity
         $lot = new BpMessageLot();
         $lot->setLotType('email'); // Explicitly set as email lot
-        $lot->setName($config['lot_name'] ?? "Email Campaign {$campaign->getName()}");
+        // Use event name if available, otherwise fallback to campaign name
+        $lotName = $config['event_name'] ?? "Email Campaign {$campaign->getName()}";
+        $lot->setName($lotName);
 
         $timeWindow = (int) ($config['time_window'] ?? $config['default_time_window'] ?? 300);
 

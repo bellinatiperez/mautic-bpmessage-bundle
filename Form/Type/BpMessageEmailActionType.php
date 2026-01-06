@@ -24,21 +24,6 @@ class BpMessageEmailActionType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
-        // Lot Configuration
-        $builder->add(
-            'lot_name',
-            TextType::class,
-            [
-                'label'      => 'mautic.bpmessage.form.lot_name',
-                'label_attr' => ['class' => 'control-label'],
-                'attr'       => [
-                    'class'   => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.lot_name.tooltip',
-                ],
-                'required' => false,
-            ]
-        );
-
         // Lot Data - Custom fields for CreateEmailLot payload
         $builder->add(
             'lot_data',
