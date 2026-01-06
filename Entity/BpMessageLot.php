@@ -78,6 +78,11 @@ class BpMessageLot
     private ?string $bookBusinessForeignId = null;
 
     /**
+     * @ORM\Column(name="crm_id", type="string", length=255, nullable=true)
+     */
+    private ?string $crmId = null;
+
+    /**
      * @ORM\Column(name="image_url", type="text", nullable=true)
      */
     private ?string $imageUrl = null;
@@ -171,6 +176,7 @@ class BpMessageLot
         $builder->addNamedField('serviceType', 'integer', 'service_type', ['nullable' => true]);
         $builder->addNamedField('idBookBusinessSendGroup', 'integer', 'id_book_business_send_group', ['nullable' => true]);
         $builder->addNamedField('bookBusinessForeignId', 'string', 'book_business_foreign_id', ['nullable' => true, 'length' => 255]);
+        $builder->addNamedField('crmId', 'string', 'crm_id', ['nullable' => true, 'length' => 255]);
         $builder->addNamedField('imageUrl', 'text', 'image_url', ['nullable' => true]);
         $builder->addNamedField('imageName', 'string', 'image_name', ['nullable' => true, 'length' => 255]);
         $builder->addNamedField('status', 'string', 'status', ['length' => 20]);
@@ -314,6 +320,18 @@ class BpMessageLot
     public function setBookBusinessForeignId(?string $bookBusinessForeignId): self
     {
         $this->bookBusinessForeignId = $bookBusinessForeignId;
+
+        return $this;
+    }
+
+    public function getCrmId(): ?string
+    {
+        return $this->crmId;
+    }
+
+    public function setCrmId(?string $crmId): self
+    {
+        $this->crmId = $crmId;
 
         return $this;
     }

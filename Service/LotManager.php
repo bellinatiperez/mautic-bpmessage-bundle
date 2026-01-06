@@ -69,8 +69,9 @@ class LotManager
         }
 
         $idServiceSettings     = (int) $config['id_service_settings'];
-        $crmId                 = (int) $config['crm_id'];
-        $bookBusinessForeignId = (int) $config['book_business_foreign_id'];
+        // Keep as strings to preserve leading zeros and alphanumeric values
+        $crmId                 = (string) $config['crm_id'];
+        $bookBusinessForeignId = (string) $config['book_business_foreign_id'];
         $serviceType           = (int) ($config['service_type'] ?? 1);
 
         $idQuotaSettings = $this->routesService->getQuotaSettingsForRoute(
@@ -213,6 +214,14 @@ class LotManager
         $lot->setTimeWindow($timeWindow);
         $lot->setStatus('OPEN');
 
+        // Save CRM ID and Book Business Foreign ID (Carteira) on the lot entity
+        if (!empty($config['crm_id'])) {
+            $lot->setCrmId((string) $config['crm_id']);
+        }
+        if (!empty($config['book_business_foreign_id'])) {
+            $lot->setBookBusinessForeignId((string) $config['book_business_foreign_id']);
+        }
+
         if (!empty($config['image_url'])) {
             $lot->setImageUrl($config['image_url']);
         }
@@ -224,13 +233,14 @@ class LotManager
         // Save config for API payload creation during processing
         // Dates will be calculated at that time
         // Include bookBusinessForeignId and crmId for route name lookup on errors
+        // Keep as strings to preserve leading zeros and alphanumeric values
         $lotConfig = [
             'name'                  => $lot->getName(),
             'user'                  => 'system',
             'idQuotaSettings'       => $lot->getIdQuotaSettings(),
             'idServiceSettings'     => $lot->getIdServiceSettings(),
-            'bookBusinessForeignId' => (int) ($config['book_business_foreign_id'] ?? 0),
-            'crmId'                 => (int) ($config['crm_id'] ?? 0),
+            'bookBusinessForeignId' => (string) ($config['book_business_foreign_id'] ?? ''),
+            'crmId'                 => (string) ($config['crm_id'] ?? ''),
         ];
 
         if (!empty($config['image_url'])) {
@@ -866,8 +876,8 @@ class LotManager
 
         return $this->routesService->getRouteNameByIdServiceSettings(
             $idServiceSettings,
-            (int) $bookBusinessForeignId,
-            (int) $crmId,
+            (string) $bookBusinessForeignId,
+            (string) $crmId,
             $serviceType
         );
     }

@@ -53,9 +53,10 @@ class BpMessageActionType extends AbstractType
         );
 
         // CRM ID - Required for GetRoutes API
+        // Using TextType to preserve leading zeros and alphanumeric values (e.g., "01", "C0001")
         $builder->add(
             'crm_id',
-            IntegerType::class,
+            TextType::class,
             [
                 'label'      => 'mautic.bpmessage.form.crm_id',
                 'label_attr' => ['class' => 'control-label'],
@@ -72,9 +73,10 @@ class BpMessageActionType extends AbstractType
         );
 
         // Book Business Foreign ID (Carteira) - Required for GetRoutes API
+        // Using TextType to preserve leading zeros and alphanumeric values (e.g., "01", "00001", "C0001")
         $builder->add(
             'book_business_foreign_id',
-            IntegerType::class,
+            TextType::class,
             [
                 'label'      => 'mautic.bpmessage.form.book_business_foreign_id',
                 'label_attr' => ['class' => 'control-label'],
@@ -198,10 +200,11 @@ class BpMessageActionType extends AbstractType
                 // If route_data is stale/missing, try to fetch from API to get the correct label
                 if ($isStaleData) {
                     $serviceType = (int) ($data['service_type'] ?? 1);
-                    $crmId = (int) ($data['crm_id'] ?? 0);
-                    $bookBusinessForeignId = (int) ($data['book_business_foreign_id'] ?? 0);
+                    // Keep as strings to preserve leading zeros and alphanumeric values
+                    $crmId = trim((string) ($data['crm_id'] ?? ''));
+                    $bookBusinessForeignId = trim((string) ($data['book_business_foreign_id'] ?? ''));
 
-                    if ($crmId > 0 && $bookBusinessForeignId > 0) {
+                    if ('' !== $crmId && '' !== $bookBusinessForeignId) {
                         try {
                             $routes = $routesService->getRoutes($bookBusinessForeignId, $crmId, $serviceType);
                             foreach ($routes as $route) {

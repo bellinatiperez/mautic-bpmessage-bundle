@@ -100,6 +100,24 @@
                             {% endif %}
                         </dd>
 
+                        <dt>{{ 'mautic.bpmessage.lot.crm_id'|trans }}:</dt>
+                        <dd>
+                            {% if lot.crmId %}
+                                <code>{{ lot.crmId }}</code>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt>{{ 'mautic.bpmessage.lot.book_business_foreign_id'|trans }}:</dt>
+                        <dd>
+                            {% if lot.bookBusinessForeignId %}
+                                <code>{{ lot.bookBusinessForeignId }}</code>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </dd>
+
                         <dt>{{ 'mautic.bpmessage.lot.user_cpf'|trans }}:</dt>
                         <dd><code>{{ lot.userCpf }}</code></dd>
                     </dl>

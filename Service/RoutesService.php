@@ -38,13 +38,13 @@ class RoutesService
     /**
      * Get routes from cache or API.
      *
-     * @param int $bookBusinessForeignId Book business foreign ID (Carteira)
-     * @param int $crmId                 CRM ID
-     * @param int $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
+     * @param string $bookBusinessForeignId Book business foreign ID (Carteira) - string to preserve leading zeros
+     * @param string $crmId                 CRM ID - string to preserve leading zeros/alphanumeric values
+     * @param int    $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
      *
      * @return array List of routes
      */
-    public function getRoutes(int $bookBusinessForeignId, int $crmId, int $serviceTypeId): array
+    public function getRoutes(string $bookBusinessForeignId, string $crmId, int $serviceTypeId): array
     {
         $cacheKey = $this->getCacheKey($bookBusinessForeignId, $crmId, $serviceTypeId);
         $ttl      = $this->getCacheTtl();
@@ -112,17 +112,17 @@ class RoutesService
     /**
      * Get idQuotaSettings for a specific route (idServiceSettings).
      *
-     * @param int $idServiceSettings     The service settings ID to look up
-     * @param int $bookBusinessForeignId Book business foreign ID (Carteira)
-     * @param int $crmId                 CRM ID
-     * @param int $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
+     * @param int    $idServiceSettings     The service settings ID to look up
+     * @param string $bookBusinessForeignId Book business foreign ID (Carteira) - string to preserve leading zeros
+     * @param string $crmId                 CRM ID - string to preserve leading zeros/alphanumeric values
+     * @param int    $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
      *
      * @return int|null The idQuotaSettings for the route, or null if not found
      */
     public function getQuotaSettingsForRoute(
         int $idServiceSettings,
-        int $bookBusinessForeignId,
-        int $crmId,
+        string $bookBusinessForeignId,
+        string $crmId,
         int $serviceTypeId
     ): ?int {
         $routes = $this->getRoutes($bookBusinessForeignId, $crmId, $serviceTypeId);
@@ -155,17 +155,17 @@ class RoutesService
     /**
      * Get route name for a specific idServiceSettings.
      *
-     * @param int $idServiceSettings     The service settings ID to look up
-     * @param int $bookBusinessForeignId Book business foreign ID (Carteira)
-     * @param int $crmId                 CRM ID
-     * @param int $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
+     * @param int    $idServiceSettings     The service settings ID to look up
+     * @param string $bookBusinessForeignId Book business foreign ID (Carteira) - string to preserve leading zeros
+     * @param string $crmId                 CRM ID - string to preserve leading zeros/alphanumeric values
+     * @param int    $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
      *
      * @return string|null The route name, or null if not found
      */
     public function getRouteNameByIdServiceSettings(
         int $idServiceSettings,
-        int $bookBusinessForeignId,
-        int $crmId,
+        string $bookBusinessForeignId,
+        string $crmId,
         int $serviceTypeId
     ): ?string {
         $routes = $this->getRoutes($bookBusinessForeignId, $crmId, $serviceTypeId);
@@ -182,13 +182,13 @@ class RoutesService
     /**
      * Clear routes cache.
      *
-     * @param int|null $bookBusinessForeignId If provided, clear only this specific cache
-     * @param int|null $crmId                 If provided, clear only this specific cache
-     * @param int|null $serviceTypeId         If provided, clear only this specific cache
+     * @param string|null $bookBusinessForeignId If provided, clear only this specific cache
+     * @param string|null $crmId                 If provided, clear only this specific cache
+     * @param int|null    $serviceTypeId         If provided, clear only this specific cache
      */
     public function clearCache(
-        ?int $bookBusinessForeignId = null,
-        ?int $crmId = null,
+        ?string $bookBusinessForeignId = null,
+        ?string $crmId = null,
         ?int $serviceTypeId = null
     ): void {
         if (null !== $bookBusinessForeignId && null !== $crmId && null !== $serviceTypeId) {
@@ -208,7 +208,7 @@ class RoutesService
     /**
      * Generate cache key for routes.
      */
-    private function getCacheKey(int $bookBusinessForeignId, int $crmId, int $serviceTypeId): string
+    private function getCacheKey(string $bookBusinessForeignId, string $crmId, int $serviceTypeId): string
     {
         return self::CACHE_PREFIX."{$bookBusinessForeignId}_{$crmId}_{$serviceTypeId}";
     }

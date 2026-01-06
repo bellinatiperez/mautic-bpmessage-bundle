@@ -361,14 +361,25 @@ class BatchController
             $statistics[$status] = $stat['count'];
         }
 
-        // Get route name from payload if available
+        // Get route name - first try entity fields, then fall back to payload
         $routeName = null;
-        $payload = $lot->getCreateLotPayload();
-        if ($payload && !empty($payload['bookBusinessForeignId']) && !empty($payload['crmId'])) {
+        $bookBusinessForeignId = $lot->getBookBusinessForeignId();
+        $crmId = $lot->getCrmId();
+
+        // Fall back to payload if entity fields are empty (for older lots)
+        if (empty($bookBusinessForeignId) || empty($crmId)) {
+            $payload = $lot->getCreateLotPayload();
+            if ($payload) {
+                $bookBusinessForeignId = !empty($payload['bookBusinessForeignId']) ? (string) $payload['bookBusinessForeignId'] : '';
+                $crmId = !empty($payload['crmId']) ? (string) $payload['crmId'] : '';
+            }
+        }
+
+        if (!empty($bookBusinessForeignId) && !empty($crmId)) {
             $routeName = $this->routesService->getRouteNameByIdServiceSettings(
                 $lot->getIdServiceSettings(),
-                (int) $payload['bookBusinessForeignId'],
-                (int) $payload['crmId'],
+                $bookBusinessForeignId,
+                $crmId,
                 $lot->getServiceType() ?? 1
             );
         }

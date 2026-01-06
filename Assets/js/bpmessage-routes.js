@@ -19,23 +19,61 @@
 
     /**
      * Find the route select element
+     * Prioritizes visible/active modals
      */
     function findRouteSelect() {
+        // First try to find in visible modal
+        var activeModal = document.querySelector('.modal.in, .modal.show, .builder-content');
+        if (activeModal) {
+            var selectInModal = activeModal.querySelector('[data-bpmessage-routes-select]');
+            if (selectInModal) {
+                return selectInModal;
+            }
+        }
+
+        // Fallback to any route select
         return document.querySelector('[data-bpmessage-routes-select]');
     }
 
     /**
      * Find the route data hidden field (stores full route object as JSON)
+     * Prioritizes fields within the same context as the route select
      */
     function findRouteDataField() {
-        var field = document.querySelector('[data-bpmessage-route-data]');
+        var routeSelect = document.querySelector('[data-bpmessage-routes-select]');
+        var searchContext = document;
+
+        // First try to find in visible modal
+        var activeModal = document.querySelector('.modal.in, .modal.show, .builder-content');
+        if (activeModal) {
+            searchContext = activeModal;
+        } else if (routeSelect) {
+            var form = routeSelect.closest('form');
+            if (form) {
+                searchContext = form;
+            }
+        }
+
+        var field = searchContext.querySelector('[data-bpmessage-route-data]');
         if (field) return field;
 
-        field = document.querySelector('input[name*="[route_data]"]');
+        field = searchContext.querySelector('input[name*="[route_data]"]');
         if (field) return field;
 
-        field = document.querySelector('input[id*="_route_data"]');
+        field = searchContext.querySelector('input[id*="_route_data"]');
         if (field) return field;
+
+        // Fallback to document-wide search
+        if (searchContext !== document) {
+            field = document.querySelector('[data-bpmessage-route-data]');
+            if (field) return field;
+
+            field = document.querySelector('input[name*="[route_data]"]');
+            if (field) return field;
+
+            field = document.querySelector('input[id*="_route_data"]');
+            if (field) return field;
+        }
 
         return null;
     }
@@ -96,15 +134,58 @@
 
     /**
      * Find trigger fields (service_type, crm_id, book_business_foreign_id)
+     * Prioritizes fields within the same form/modal as the route select
      */
     function findTriggerFields() {
-        return document.querySelectorAll('[data-bpmessage-routes-trigger]');
+        var routeSelect = findRouteSelect();
+        var searchContext = document;
+
+        // If we have a route select, search within its form or closest modal first
+        if (routeSelect) {
+            var form = routeSelect.closest('form');
+            var modal = routeSelect.closest('.modal, .builder-content, [id*="campaignevent"]');
+            searchContext = form || modal || document;
+        }
+
+        var fields = searchContext.querySelectorAll('[data-bpmessage-routes-trigger]');
+
+        // Fallback to document-wide search if not found in context
+        if (fields.length === 0 && searchContext !== document) {
+            fields = document.querySelectorAll('[data-bpmessage-routes-trigger]');
+        }
+
+        return fields;
     }
 
     /**
      * Find a field by partial name match
+     * Prioritizes fields within the same form/modal as the route select
      */
     function findFieldByName(partialName) {
+        var routeSelect = findRouteSelect();
+        var searchContext = document;
+
+        // If we have a route select, search within its form or closest modal first
+        if (routeSelect) {
+            var form = routeSelect.closest('form');
+            var modal = routeSelect.closest('.modal, .builder-content, [id*="campaignevent"]');
+            searchContext = form || modal || document;
+        }
+
+        // First, try to find by the data-bpmessage-routes-trigger attribute with matching name
+        var triggerFields = searchContext.querySelectorAll('[data-bpmessage-routes-trigger]');
+        for (var i = 0; i < triggerFields.length; i++) {
+            var field = triggerFields[i];
+            var fieldName = field.name || '';
+            var fieldId = field.id || '';
+            if (fieldName.indexOf('[' + partialName + ']') !== -1 ||
+                fieldName.endsWith('[' + partialName + ']') ||
+                fieldId.indexOf('_' + partialName) !== -1 ||
+                fieldId.endsWith('_' + partialName)) {
+                return field;
+            }
+        }
+
         var selectors = [
             '[name*="[' + partialName + ']"]',
             '[name$="[' + partialName + ']"]',
@@ -113,11 +194,22 @@
         ];
 
         for (var i = 0; i < selectors.length; i++) {
-            var field = document.querySelector(selectors[i]);
+            var field = searchContext.querySelector(selectors[i]);
             if (field) {
                 return field;
             }
         }
+
+        // Fallback to document-wide search if not found in context
+        if (searchContext !== document) {
+            for (var i = 0; i < selectors.length; i++) {
+                var field = document.querySelector(selectors[i]);
+                if (field) {
+                    return field;
+                }
+            }
+        }
+
         return null;
     }
 
@@ -168,7 +260,16 @@
             return null;
         }
 
-        return serviceTypeField.value + '_' + crmIdField.value + '_' + bookBusinessField.value;
+        var serviceType = String(serviceTypeField.value || '').trim();
+        var crmId = String(crmIdField.value || '').trim();
+        var bookBusinessForeignId = String(bookBusinessField.value || '').trim();
+
+        // Return null if any required value is missing or zero
+        if (!serviceType || !crmId || !bookBusinessForeignId || crmId === '0' || bookBusinessForeignId === '0') {
+            return null;
+        }
+
+        return serviceType + '_' + crmId + '_' + bookBusinessForeignId;
     }
 
     /**
@@ -178,11 +279,20 @@
         var routeSelect = findRouteSelect();
         var triggerFields = findTriggerFields();
 
+        console.log('BpMessage initRoutes:', {
+            routeSelect: routeSelect ? routeSelect.id : 'not found',
+            triggerFieldsCount: triggerFields.length,
+            triggerFieldIds: Array.from(triggerFields).map(function(f) { return f.id + ' type=' + f.type; }),
+            allTriggerFieldsInDoc: document.querySelectorAll('[data-bpmessage-routes-trigger]').length
+        });
+
         if (!routeSelect) {
+            console.log('BpMessage: No route select found, exiting initRoutes');
             return;
         }
 
         if (triggerFields.length === 0) {
+            console.log('BpMessage: No trigger fields found, exiting initRoutes');
             return;
         }
 
@@ -252,9 +362,15 @@
         triggerFields.forEach(function (field) {
             field.removeEventListener('change', handleTriggerFieldChange);
             field.removeEventListener('blur', handleTriggerFieldBlur);
+            field.removeEventListener('input', handleTriggerFieldInput);
 
             field.addEventListener('change', handleTriggerFieldChange);
             field.addEventListener('blur', handleTriggerFieldBlur);
+
+            // For text/number inputs, also listen to 'input' event for real-time updates
+            if (field.tagName === 'INPUT' && (field.type === 'text' || field.type === 'number')) {
+                field.addEventListener('input', handleTriggerFieldInput);
+            }
         });
 
         // Listen to route select change
@@ -301,11 +417,12 @@
      */
     function handleTriggerFieldChange() {
         var newParams = getCurrentParams();
-        if (newParams !== lastParams) {
-            routesLoaded = false;
-            dropdownOpenedOnce = false;
-            loadRoutesIfNeeded();
-        }
+        // Always reset and reload when trigger field changes
+        routesLoaded = false;
+        dropdownOpenedOnce = false;
+        lastParams = null; // Force reload
+        currentSelectedValue = null; // Clear previous selection
+        loadRoutes();
     }
 
     /**
@@ -313,11 +430,40 @@
      */
     function handleTriggerFieldBlur() {
         var newParams = getCurrentParams();
-        if (newParams !== lastParams) {
+        if (newParams !== lastParams && newParams !== null) {
             routesLoaded = false;
             dropdownOpenedOnce = false;
-            loadRoutesIfNeeded();
+            lastParams = null; // Force reload
+            loadRoutes();
         }
+    }
+
+    /**
+     * Debounce timer for input events
+     */
+    var inputDebounceTimer = null;
+
+    /**
+     * Handle trigger field input (for text/number fields - real-time updates with debounce)
+     */
+    function handleTriggerFieldInput() {
+        // Clear previous timer
+        if (inputDebounceTimer) {
+            clearTimeout(inputDebounceTimer);
+        }
+
+        // Set new timer - wait 500ms after user stops typing
+        inputDebounceTimer = setTimeout(function() {
+            var newParams = getCurrentParams();
+            console.log('BpMessage input event - params:', newParams, 'lastParams:', lastParams);
+            if (newParams !== lastParams && newParams !== null) {
+                routesLoaded = false;
+                dropdownOpenedOnce = false;
+                lastParams = null; // Force reload
+                currentSelectedValue = null; // Clear previous selection
+                loadRoutes();
+            }
+        }, 500);
     }
 
     /**
@@ -354,7 +500,36 @@
         var crmId = crmIdField.value;
         var bookBusinessForeignId = bookBusinessField.value;
 
-        if (!serviceType || !crmId || !bookBusinessForeignId) {
+        // Trim values and convert to ensure proper comparison
+        serviceType = String(serviceType || '').trim();
+        crmId = String(crmId || '').trim();
+        bookBusinessForeignId = String(bookBusinessForeignId || '').trim();
+
+        // Debug log
+        var routeSelectForDebug = findRouteSelect();
+        var searchContextDebug = 'document';
+        if (routeSelectForDebug) {
+            var formDebug = routeSelectForDebug.closest('form');
+            var modalDebug = routeSelectForDebug.closest('.modal, .builder-content, [id*="campaignevent"]');
+            searchContextDebug = formDebug ? 'form#' + (formDebug.id || 'no-id') : (modalDebug ? 'modal/builder' : 'document');
+        }
+        console.log('BpMessage loadRoutes:', {
+            serviceType: serviceType,
+            crmId: crmId,
+            bookBusinessForeignId: bookBusinessForeignId,
+            serviceTypeField: serviceTypeField ? (serviceTypeField.id + ' name=' + serviceTypeField.name) : 'not found',
+            crmIdField: crmIdField ? (crmIdField.id + ' name=' + crmIdField.name) : 'not found',
+            bookBusinessField: bookBusinessField ? (bookBusinessField.id + ' name=' + bookBusinessField.name) : 'not found',
+            searchContext: searchContextDebug,
+            rawValues: {
+                serviceTypeRaw: serviceTypeField ? serviceTypeField.value : null,
+                crmIdRaw: crmIdField ? crmIdField.value : null,
+                bookBusinessRaw: bookBusinessField ? bookBusinessField.value : null
+            }
+        });
+
+        if (!serviceType || !crmId || !bookBusinessForeignId || crmId === '0' || bookBusinessForeignId === '0') {
+            console.log('BpMessage: Missing params, clearing select');
             clearRouteSelect(routeSelect);
             return;
         }
@@ -376,6 +551,8 @@
             '&crm_id=' + encodeURIComponent(crmId) +
             '&book_business_foreign_id=' + encodeURIComponent(bookBusinessForeignId);
 
+        console.log('BpMessage API URL:', url);
+
         fetch(url, {
             method: 'GET',
             headers: {
@@ -394,16 +571,20 @@
             isLoading = false;
             routesLoaded = true;
 
+            console.log('BpMessage API response:', data);
+
             if (data.success && data.routes && data.routes.length > 0) {
                 populateRouteSelect(routeSelect, data.routes);
             } else {
                 var errorMsg = data.error || 'Nenhuma rota encontrada';
+                console.log('BpMessage API error:', errorMsg);
                 routeSelect.innerHTML = '<option value="">(' + errorMsg + ')</option>';
                 updateChosenComponent(routeSelect, 0, true);
             }
         })
         .catch(function (error) {
             isLoading = false;
+            console.log('BpMessage fetch error:', error);
             routeSelect.innerHTML = '<option value="">(Erro ao carregar rotas)</option>';
             updateChosenComponent(routeSelect, 0, true);
         });

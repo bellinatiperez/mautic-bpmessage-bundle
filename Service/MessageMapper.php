@@ -41,6 +41,12 @@ class MessageMapper
         $serviceType              = (int) ($config['service_type'] ?? 1); // Default: WhatsApp (1)
         $message['idServiceType'] = $serviceType;
 
+        // Add idForeignBookBusiness from config (required by AddMessageToLot API)
+        // This identifies the "Carteira" for the message
+        if (!empty($config['book_business_foreign_id'])) {
+            $message['idForeignBookBusiness'] = (string) $config['book_business_foreign_id'];
+        }
+
         // Add message text for SMS/WhatsApp
         if (in_array($serviceType, [1, 2])) { // SMS or WhatsApp
             $text            = $config['message_text'] ?? '';

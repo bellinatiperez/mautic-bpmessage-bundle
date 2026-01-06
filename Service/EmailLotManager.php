@@ -126,9 +126,12 @@ class EmailLotManager
         $lot->setTimeWindow($timeWindow);
         $lot->setStatus('OPEN');
 
-        // Set book_business_foreign_id if provided
+        // Set CRM ID and Book Business Foreign ID (Carteira) if provided
+        if (!empty($config['crm_id'])) {
+            $lot->setCrmId((string) $config['crm_id']);
+        }
         if (!empty($config['book_business_foreign_id'])) {
-            $lot->setBookBusinessForeignId($config['book_business_foreign_id']);
+            $lot->setBookBusinessForeignId((string) $config['book_business_foreign_id']);
         }
 
         // Save config for API payload creation during processing
@@ -139,13 +142,13 @@ class EmailLotManager
             'idServiceSettings' => $lot->getIdServiceSettings(),
         ];
 
-        // Add optional fields
+        // Add optional fields - keep as strings to preserve leading zeros and alphanumeric values
         if (!empty($config['crm_id'])) {
-            $lotConfig['crmId'] = (int) $config['crm_id'];
+            $lotConfig['crmId'] = (string) $config['crm_id'];
         }
 
         if (!empty($config['book_business_foreign_id'])) {
-            $lotConfig['bookBusinessForeignId'] = $config['book_business_foreign_id'];
+            $lotConfig['bookBusinessForeignId'] = (string) $config['book_business_foreign_id'];
         }
 
         if (!empty($config['step_foreign_id'])) {

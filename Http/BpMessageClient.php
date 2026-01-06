@@ -555,18 +555,18 @@ class BpMessageClient
      *
      * GET /api/ServiceSettings/GetRoutes?BookBusinessForeignId={}&CrmId={}&ServiceTypeId={}
      *
-     * @param int $bookBusinessForeignId Book business foreign ID (Carteira)
-     * @param int $crmId                 CRM ID
-     * @param int $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
+     * @param string $bookBusinessForeignId Book business foreign ID (Carteira) - string to preserve leading zeros
+     * @param string $crmId                 CRM ID - string to preserve leading zeros/alphanumeric values
+     * @param int    $serviceTypeId         Service type (1=WhatsApp, 2=SMS, 4=RCS)
      *
      * @return array ['success' => bool, 'routes' => array, 'error' => string|null]
      */
-    public function getRoutes(int $bookBusinessForeignId, int $crmId, int $serviceTypeId): array
+    public function getRoutes(string $bookBusinessForeignId, string $crmId, int $serviceTypeId): array
     {
         $endpoint = sprintf(
-            '/api/ServiceSettings/GetRoutes?BookBusinessForeignId=%d&CrmId=%d&ServiceTypeId=%d',
-            $bookBusinessForeignId,
-            $crmId,
+            '/api/ServiceSettings/GetRoutes?BookBusinessForeignId=%s&CrmId=%s&ServiceTypeId=%d',
+            urlencode($bookBusinessForeignId),
+            urlencode($crmId),
             $serviceTypeId
         );
 

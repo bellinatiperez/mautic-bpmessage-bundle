@@ -28,23 +28,24 @@ class AjaxController extends CommonAjaxController
      */
     public function getRoutesAction(Request $request, RoutesService $routesService): JsonResponse
     {
-        $bookBusinessForeignId = $request->query->getInt('book_business_foreign_id', 0);
-        $crmId                 = $request->query->getInt('crm_id', 0);
-        $serviceType           = $request->query->getInt('service_type', 1);
+        // Get values as strings - do NOT convert to int (preserve leading zeros, alphanumeric values like "C0001")
+        $bookBusinessForeignId = trim((string) $request->query->get('book_business_foreign_id', ''));
+        $crmId                 = trim((string) $request->query->get('crm_id', ''));
+        $serviceType           = (int) $request->query->get('service_type', 1) ?: 1; // Only service_type is int
 
         // Also check POST data (Mautic AJAX can send via POST)
-        if (0 === $bookBusinessForeignId) {
-            $bookBusinessForeignId = $request->request->getInt('book_business_foreign_id', 0);
+        if ('' === $bookBusinessForeignId && $request->request->has('book_business_foreign_id')) {
+            $bookBusinessForeignId = trim((string) $request->request->get('book_business_foreign_id', ''));
         }
-        if (0 === $crmId) {
-            $crmId = $request->request->getInt('crm_id', 0);
+        if ('' === $crmId && $request->request->has('crm_id')) {
+            $crmId = trim((string) $request->request->get('crm_id', ''));
         }
         if (1 === $serviceType && $request->request->has('service_type')) {
-            $serviceType = $request->request->getInt('service_type', 1);
+            $serviceType = (int) $request->request->get('service_type', 1) ?: 1;
         }
 
-        // Validate required parameters
-        if (0 === $bookBusinessForeignId || 0 === $crmId) {
+        // Validate required parameters (check for empty strings)
+        if ('' === $bookBusinessForeignId || '' === $crmId) {
             return $this->sendJsonResponse([
                 'success' => false,
                 'error'   => 'Missing required parameters: book_business_foreign_id and crm_id are required',
