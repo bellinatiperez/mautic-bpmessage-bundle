@@ -444,19 +444,15 @@ class BatchController
 
             // Check if lot dates are expired - update them for valid range
             // This is critical for CREATING lots that need to call BpMessage API again
-            // Using America/Sao_Paulo timezone to match LotManager behavior
-            $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-            $now           = new \DateTime('now', $localTimezone);
-
-            // Convert lot end date to local timezone for proper comparison
-            $lotEndDate = clone $lot->getEndDate();
-            $lotEndDate->setTimezone($localTimezone);
+            // Use default PHP timezone (America/Sao_Paulo) for consistency
+            $now        = new \DateTime();
+            $lotEndDate = $lot->getEndDate();
 
             $datesUpdated = false;
             // Always update dates for CREATING lots to ensure they're in the future
             if ($lotEndDate < $now) {
                 $timeWindow   = $lot->getTimeWindow(); // in seconds
-                $newStartDate = new \DateTime('now', $localTimezone);
+                $newStartDate = new \DateTime();
                 $newEndDate   = (clone $newStartDate)->modify("+{$timeWindow} seconds");
 
                 $lot->setStartDate($newStartDate);
@@ -598,17 +594,13 @@ class BatchController
 
         // If lot dates are expired, update them before processing
         // This is important for CREATING lots that failed previously and need valid date ranges
-        // Using America/Sao_Paulo timezone to match LotManager behavior
-        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-        $now           = new \DateTime('now', $localTimezone);
-
-        // Convert lot end date to local timezone for proper comparison
-        $lotEndDate = clone $lot->getEndDate();
-        $lotEndDate->setTimezone($localTimezone);
+        // Use default PHP timezone (America/Sao_Paulo) for consistency
+        $now        = new \DateTime();
+        $lotEndDate = $lot->getEndDate();
 
         if ($lotEndDate < $now) {
             $timeWindow   = $lot->getTimeWindow(); // in seconds
-            $newStartDate = new \DateTime('now', $localTimezone);
+            $newStartDate = new \DateTime();
             $newEndDate   = (clone $newStartDate)->modify("+{$timeWindow} seconds");
 
             $lot->setStartDate($newStartDate);

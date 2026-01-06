@@ -556,9 +556,9 @@ class EmailLotManager
         }
 
         // Update dates to current time since lot creation was deferred
-        $localTimezone = new \DateTimeZone('America/Sao_Paulo');
-        $now           = new \DateTime('now', $localTimezone);
-        $timeWindow    = $lot->getTimeWindow();
+        // Use default PHP timezone (America/Sao_Paulo) for consistency
+        $now        = new \DateTime();
+        $timeWindow = $lot->getTimeWindow();
         $endDate       = (clone $now)->modify("+{$timeWindow} seconds");
 
         // Update the payload with fresh dates

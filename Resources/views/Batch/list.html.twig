@@ -154,13 +154,6 @@
         </div>
     </div>
 
-    {# Results count #}
-    <div class="mb-2">
-        <span class="text-muted">
-            {{ 'mautic.bpmessage.results'|trans({'%count%': totalCount}) }}
-        </span>
-    </div>
-
     <div class="panel-body">
         {% if lots|length == 0 %}
             <div class="alert alert-info">
@@ -246,9 +239,7 @@
                                     {{ stats.total }}
                                 </td>
                                 <td>
-                                    <span title="{{ lot.createdAt|date('Y-m-d H:i:s') }}">
-                                        {{ lot.createdAt|date('Y-m-d H:i') }}
-                                    </span>
+                                    {{ dateToText(lot.createdAt) }}
                                 </td>
                                 <td style="white-space: nowrap;">
                                     <div class="btn-group" style="display: flex; flex-wrap: nowrap;">
