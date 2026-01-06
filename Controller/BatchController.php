@@ -71,6 +71,8 @@ class BatchController
         $filterType     = $request->query->get('type', '');      // 'email', 'sms', 'whatsapp', 'rcs' or ''
         $filterCampaign = $request->query->get('campaign_id', '');
         $filterDays     = (int) $request->query->get('days', 0);  // 0 = all, 7, 14, 30, 60, 90
+        $filterDateFrom = $request->query->get('date_from', '');  // YYYY-MM-DD format
+        $filterDateTo   = $request->query->get('date_to', '');    // YYYY-MM-DD format
 
         // Get entity manager
         $em = $this->doctrine->getManager();
@@ -110,7 +112,29 @@ class BatchController
                 ->setParameter('campaignId', (int) $filterCampaign);
         }
 
-        if ($filterDays > 0) {
+        // Date range filter (takes precedence over days filter)
+        if (!empty($filterDateFrom) || !empty($filterDateTo)) {
+            if (!empty($filterDateFrom)) {
+                try {
+                    $dateFrom = new \DateTime($filterDateFrom);
+                    $dateFrom->setTime(0, 0, 0);
+                    $qb->andWhere('l.createdAt >= :dateFrom')
+                        ->setParameter('dateFrom', $dateFrom);
+                } catch (\Exception $e) {
+                    // Invalid date format, ignore
+                }
+            }
+            if (!empty($filterDateTo)) {
+                try {
+                    $dateTo = new \DateTime($filterDateTo);
+                    $dateTo->setTime(23, 59, 59);
+                    $qb->andWhere('l.createdAt <= :dateTo')
+                        ->setParameter('dateTo', $dateTo);
+                } catch (\Exception $e) {
+                    // Invalid date format, ignore
+                }
+            }
+        } elseif ($filterDays > 0) {
             $dateFrom = new \DateTime("-{$filterDays} days");
             $qb->andWhere('l.createdAt >= :dateFrom')
                 ->setParameter('dateFrom', $dateFrom);
@@ -146,7 +170,29 @@ class BatchController
                 ->setParameter('campaignId', (int) $filterCampaign);
         }
 
-        if ($filterDays > 0) {
+        // Date range filter (takes precedence over days filter)
+        if (!empty($filterDateFrom) || !empty($filterDateTo)) {
+            if (!empty($filterDateFrom)) {
+                try {
+                    $dateFrom = new \DateTime($filterDateFrom);
+                    $dateFrom->setTime(0, 0, 0);
+                    $countQb->andWhere('l.createdAt >= :dateFrom')
+                        ->setParameter('dateFrom', $dateFrom);
+                } catch (\Exception $e) {
+                    // Invalid date format, ignore
+                }
+            }
+            if (!empty($filterDateTo)) {
+                try {
+                    $dateTo = new \DateTime($filterDateTo);
+                    $dateTo->setTime(23, 59, 59);
+                    $countQb->andWhere('l.createdAt <= :dateTo')
+                        ->setParameter('dateTo', $dateTo);
+                } catch (\Exception $e) {
+                    // Invalid date format, ignore
+                }
+            }
+        } elseif ($filterDays > 0) {
             $dateFrom = new \DateTime("-{$filterDays} days");
             $countQb->andWhere('l.createdAt >= :dateFrom')
                 ->setParameter('dateFrom', $dateFrom);
@@ -249,6 +295,8 @@ class BatchController
             'filterType'     => $filterType,
             'filterCampaign' => $filterCampaign,
             'filterDays'     => $filterDays,
+            'filterDateFrom' => $filterDateFrom,
+            'filterDateTo'   => $filterDateTo,
             'activeLink'     => '#mautic_bpmessage_lot_index',
             'mauticContent'  => 'bpmessageLot',
         ]);
