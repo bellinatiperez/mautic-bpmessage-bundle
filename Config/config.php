@@ -5,7 +5,7 @@ declare(strict_types=1);
 return [
     'name'        => 'BpMessage',
     'description' => 'Integrates Mautic with BpMessage API for sending SMS, WhatsApp and RCS messages in batch mode',
-    'version'     => '1.0.0',
+    'version'     => '1.0.4',
     'author'      => 'Bellinati',
 
     'routes' => [
