@@ -134,18 +134,18 @@
                         <dd>{{ lot.timeWindow }} {{ 'mautic.bpmessage.lot.seconds'|trans }}</dd>
 
                         <dt>{{ 'mautic.core.date.added'|trans }}:</dt>
-                        <dd>{{ dateToText(lot.createdAt) }}</dd>
+                        <dd>{{ lot.createdAt|date('Y-m-d H:i:s') }}</dd>
 
                         {% if lot.finishedAt %}
                             <dt>{{ 'mautic.bpmessage.lot.finished_at'|trans }}:</dt>
-                            <dd>{{ dateToText(lot.finishedAt) }}</dd>
+                            <dd>{{ lot.finishedAt|date('Y-m-d H:i:s') }}</dd>
                         {% endif %}
 
                         <dt>{{ 'mautic.bpmessage.lot.start_date'|trans }}:</dt>
-                        <dd>{{ dateToText(lot.startDate) }}</dd>
+                        <dd>{{ lot.startDate|date('Y-m-d H:i:s') }}</dd>
 
                         <dt>{{ 'mautic.bpmessage.lot.end_date'|trans }}:</dt>
-                        <dd>{{ dateToText(lot.endDate) }}</dd>
+                        <dd>{{ lot.endDate|date('Y-m-d H:i:s') }}</dd>
                     </dl>
                 </div>
             </div>
@@ -267,7 +267,7 @@
                                             <span class="text-muted">0</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ dateToText(message.createdAt) }}</td>
+                                    <td>{{ message.createdAt|date('Y-m-d H:i:s') }}</td>
                                 </tr>
                             {% endfor %}
                         </tbody>

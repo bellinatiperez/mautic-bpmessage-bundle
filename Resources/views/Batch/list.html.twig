@@ -239,7 +239,9 @@
                                     {{ stats.total }}
                                 </td>
                                 <td>
-                                    {{ dateToText(lot.createdAt) }}
+                                    <span title="{{ lot.createdAt|date('Y-m-d H:i:s') }}">
+                                        {{ lot.createdAt|date('Y-m-d H:i') }}
+                                    </span>
                                 </td>
                                 <td style="white-space: nowrap;">
                                     <div class="btn-group" style="display: flex; flex-wrap: nowrap;">
