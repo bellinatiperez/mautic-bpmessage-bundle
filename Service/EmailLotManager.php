@@ -32,16 +32,22 @@ class EmailLotManager
     }
 
     /**
-     * Get or create an active email lot for a campaign.
+     * Get or create an active email lot for a campaign event.
      *
-     * @param array $config Action configuration
+     * Each campaign event gets its own lot to avoid email duplication conflicts
+     * between different events that might use the same service settings.
+     *
+     * @param array $config Action configuration (must include 'event_id')
      *
      * @throws LotCreationException if lot creation fails
      */
     public function getOrCreateActiveLot(Campaign $campaign, array $config): BpMessageLot
     {
-        // Check if there's an open email lot for this campaign with matching configuration
-        // Email lots are unique by: campaignId + idServiceSettings (idQuotaSettings is always 0 for emails)
+        // Get event_id from config - each event gets its own lot
+        $eventId = isset($config['event_id']) ? (int) $config['event_id'] : null;
+
+        // Check if there's an open email lot for this campaign event with matching configuration
+        // Email lots are unique by: campaignId + eventId + idServiceSettings
         $qb = $this->entityManager->createQueryBuilder();
         $qb->select('l')
             ->from(BpMessageLot::class, 'l')
@@ -51,8 +57,17 @@ class EmailLotManager
             ->andWhere('l.idServiceSettings = :idServiceSettings')
             ->setParameter('campaignId', $campaign->getId())
             ->setParameter('status', 'OPEN')
-            ->setParameter('idServiceSettings', (int) $config['id_service_settings'])
-            ->orderBy('l.createdAt', 'DESC')
+            ->setParameter('idServiceSettings', (int) $config['id_service_settings']);
+
+        // Add event_id filter if available
+        if (null !== $eventId) {
+            $qb->andWhere('l.eventId = :eventId')
+                ->setParameter('eventId', $eventId);
+        } else {
+            $qb->andWhere('l.eventId IS NULL');
+        }
+
+        $qb->orderBy('l.createdAt', 'DESC')
             ->setMaxResults(1);
 
         $lot = $qb->getQuery()->getOneOrNullResult();
@@ -63,6 +78,7 @@ class EmailLotManager
                 'lot_id'          => $lot->getId(),
                 'external_lot_id' => $lot->getExternalLotId(),
                 'campaign_id'     => $campaign->getId(),
+                'event_id'        => $eventId,
             ]);
 
             return $lot;
@@ -79,8 +95,9 @@ class EmailLotManager
             }
 
             $this->logger->info('BpMessage Email: Cannot reuse lot, creating new one', [
-                'lot_id'  => $lot->getId(),
-                'reasons' => implode(', ', $reasons),
+                'lot_id'   => $lot->getId(),
+                'event_id' => $eventId,
+                'reasons'  => implode(', ', $reasons),
             ]);
         }
 
@@ -88,6 +105,7 @@ class EmailLotManager
         $this->logger->info('BpMessage Email: Creating new lot', [
             'campaign_id'   => $campaign->getId(),
             'campaign_name' => $campaign->getName(),
+            'event_id'      => $eventId,
         ]);
 
         return $this->createLot($campaign, $config);
@@ -123,6 +141,12 @@ class EmailLotManager
         $lot->setIdQuotaSettings(0); // Not used for email lots
         $lot->setIdServiceSettings((int) $config['id_service_settings']);
         $lot->setCampaignId($campaign->getId());
+
+        // Set event_id to ensure each campaign event has its own lot
+        if (isset($config['event_id'])) {
+            $lot->setEventId((int) $config['event_id']);
+        }
+
         $lot->setApiBaseUrl($config['api_base_url']);
         $lot->setBatchSize((int) ($config['batch_size'] ?? $config['default_batch_size'] ?? 1000));
         $lot->setTimeWindow($timeWindow);

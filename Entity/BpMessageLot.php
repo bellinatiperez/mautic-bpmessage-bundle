@@ -118,6 +118,13 @@ class BpMessageLot
     private ?int $campaignId = null;
 
     /**
+     * Campaign event ID - used to ensure each event has its own lot.
+     *
+     * @ORM\Column(name="event_id", type="integer", nullable=true)
+     */
+    private ?int $eventId = null;
+
+    /**
      * @ORM\Column(name="api_base_url", type="string", length=255)
      */
     private string $apiBaseUrl;
@@ -184,6 +191,7 @@ class BpMessageLot
         $builder->addNamedField('createdAt', 'datetime', 'created_at');
         $builder->addNamedField('finishedAt', 'datetime', 'finished_at', ['nullable' => true]);
         $builder->addNamedField('campaignId', 'integer', 'campaign_id', ['nullable' => true]);
+        $builder->addNamedField('eventId', 'integer', 'event_id', ['nullable' => true]);
         $builder->addNamedField('apiBaseUrl', 'string', 'api_base_url', ['length' => 255]);
         $builder->addNamedField('batchSize', 'integer', 'batch_size');
         $builder->addNamedField('timeWindow', 'integer', 'time_window');
@@ -195,6 +203,7 @@ class BpMessageLot
         $builder->addIndex(['lot_type'], 'idx_lot_type');
         $builder->addIndex(['created_at'], 'idx_created_at');
         $builder->addIndex(['campaign_id'], 'idx_campaign_id');
+        $builder->addIndex(['event_id'], 'idx_event_id');
     }
 
     // Getters and Setters
@@ -423,6 +432,18 @@ class BpMessageLot
     public function setCampaignId(?int $campaignId): self
     {
         $this->campaignId = $campaignId;
+
+        return $this;
+    }
+
+    public function getEventId(): ?int
+    {
+        return $this->eventId;
+    }
+
+    public function setEventId(?int $eventId): self
+    {
+        $this->eventId = $eventId;
 
         return $this;
     }

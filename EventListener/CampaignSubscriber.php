@@ -204,12 +204,14 @@ class CampaignSubscriber implements EventSubscriberInterface
         $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
 
-        // Add event name to config for lot naming
+        // Add event info to config for lot identification (each event gets its own lot)
         $config['event_name'] = $event->getEvent()->getName();
+        $config['event_id']   = $event->getEvent()->getId();
 
         $this->logger->info('BpMessage Email: Campaign', [
             'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',
             'campaign_name' => $campaign ? $campaign->getName() : 'NULL',
+            'event_id'      => $event->getEvent()->getId(),
         ]);
 
         if (!$campaign) {
@@ -282,12 +284,14 @@ class CampaignSubscriber implements EventSubscriberInterface
         $config   = $event->getEvent()->getProperties();
         $campaign = $event->getEvent()->getCampaign();
 
-        // Add event name to config for lot naming
+        // Add event info to config for lot identification (each event gets its own lot)
         $config['event_name'] = $event->getEvent()->getName();
+        $config['event_id']   = $event->getEvent()->getId();
 
         $this->logger->info('BpMessage Email Template: Campaign', [
             'campaign_id'   => $campaign ? $campaign->getId() : 'NULL',
             'campaign_name' => $campaign ? $campaign->getName() : 'NULL',
+            'event_id'      => $event->getEvent()->getId(),
         ]);
 
         if (!$campaign) {
