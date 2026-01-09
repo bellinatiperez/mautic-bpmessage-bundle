@@ -371,6 +371,19 @@
             if (field.tagName === 'INPUT' && (field.type === 'text' || field.type === 'number')) {
                 field.addEventListener('input', handleTriggerFieldInput);
             }
+
+            // For SELECT elements, also bind jQuery change event for Chosen.js compatibility
+            // Chosen.js triggers jQuery change event, not native DOM change event
+            if (field.tagName === 'SELECT' && typeof jQuery !== 'undefined') {
+                var $field = jQuery(field);
+                // Remove any previous handler to avoid duplicates
+                $field.off('change.bpmessage');
+                // Bind jQuery change event - this is triggered by Chosen.js when selection changes
+                $field.on('change.bpmessage', function() {
+                    console.log('BpMessage: Chosen select changed via jQuery:', field.id, field.value);
+                    handleTriggerFieldChange.call(field);
+                });
+            }
         });
 
         // Listen to route select change
