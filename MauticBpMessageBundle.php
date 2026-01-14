@@ -46,13 +46,22 @@ class MauticBpMessageBundle extends PluginBundleBase
             return;
         }
 
+        // Skip migrations during build/install (no database configured yet)
+        if (!$container->hasParameter('mautic.db_table_prefix')) {
+            return;
+        }
+
+        $tablePrefix = $container->getParameter('mautic.db_table_prefix');
+        if (null === $tablePrefix) {
+            return;
+        }
+
         try {
             $entityManager = $container->get('doctrine.orm.entity_manager');
-            $tablePrefix   = $container->getParameter('mautic.db_table_prefix');
 
             $engine = new Engine(
                 $entityManager,
-                $tablePrefix,
+                (string) $tablePrefix,
                 $this->getPath(),
                 'MauticBpMessageBundle'
             );
