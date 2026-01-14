@@ -462,11 +462,15 @@ class MessageMapper
         // Get phone limit from config (0 = no limit)
         $phoneLimit = (int) ($config['phone_limit'] ?? 0);
 
+        // Get phone type filter from config (all, mobile, landline)
+        $phoneTypeFilter = $config['phone_type_filter'] ?? 'all';
+
         $this->logger->debug('BpMessage: Extracting phones from field', [
-            'lead_id'     => $lead->getId(),
-            'field_alias' => $fieldAlias,
-            'field_value' => $fieldValue,
-            'phone_limit' => $phoneLimit,
+            'lead_id'           => $lead->getId(),
+            'field_alias'       => $fieldAlias,
+            'field_value'       => $fieldValue,
+            'phone_limit'       => $phoneLimit,
+            'phone_type_filter' => $phoneTypeFilter,
         ]);
 
         // Check if it's a JSON array (collection field)
@@ -476,16 +480,21 @@ class MessageMapper
                 $phones = [];
                 foreach ($decoded as $phone) {
                     if (!empty($phone)) {
-                        $phones[] = $this->normalizePhone((string) $phone);
+                        $normalized = $this->normalizePhone((string) $phone);
+
+                        // Apply phone type filter
+                        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                            $phones[] = $normalized;
+                        }
                     }
                 }
 
                 // Apply phone limit if configured (only for collection fields)
                 if ($phoneLimit > 0 && count($phones) > $phoneLimit) {
                     $this->logger->debug('BpMessage: Applying phone limit to collection', [
-                        'lead_id'       => $lead->getId(),
+                        'lead_id'        => $lead->getId(),
                         'original_count' => count($phones),
-                        'limit'         => $phoneLimit,
+                        'limit'          => $phoneLimit,
                     ]);
                     $phones = array_slice($phones, 0, $phoneLimit);
                 }
@@ -499,8 +508,19 @@ class MessageMapper
             }
         }
 
-        // Single value - phone_limit does not apply
-        return [$this->normalizePhone((string) $fieldValue)];
+        // Single value - apply filter but phone_limit does not apply
+        $normalized = $this->normalizePhone((string) $fieldValue);
+        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+            return [$normalized];
+        }
+
+        $this->logger->debug('BpMessage: Single phone filtered out by type filter', [
+            'lead_id'           => $lead->getId(),
+            'phone'             => $normalized['phone'] ?? '',
+            'phone_type_filter' => $phoneTypeFilter,
+        ]);
+
+        return [];
     }
 
     /**
@@ -528,6 +548,41 @@ class MessageMapper
             'areaCode' => '',
             'phone'    => $digits,
         ];
+    }
+
+    /**
+     * Check if a normalized phone matches the phone type filter.
+     *
+     * Brazilian mobile phones have 9 digits (starting with 9).
+     * Brazilian landlines have 8 digits.
+     *
+     * @param array  $normalizedPhone ['areaCode' => string, 'phone' => string]
+     * @param string $filter          'all', 'mobile', or 'landline'
+     */
+    private function matchesPhoneTypeFilter(array $normalizedPhone, string $filter): bool
+    {
+        if ('all' === $filter) {
+            return true;
+        }
+
+        $phoneNumber = $normalizedPhone['phone'] ?? '';
+        $phoneLength = strlen($phoneNumber);
+
+        // Brazilian mobile: 9 digits, starts with 9
+        // Brazilian landline: 8 digits
+        $isMobile = 9 === $phoneLength && str_starts_with($phoneNumber, '9');
+        $isLandline = 8 === $phoneLength;
+
+        if ('mobile' === $filter) {
+            return $isMobile;
+        }
+
+        if ('landline' === $filter) {
+            return $isLandline;
+        }
+
+        // Unknown filter - allow all
+        return true;
     }
 
     /**

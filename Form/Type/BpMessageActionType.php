@@ -294,11 +294,37 @@ class BpMessageActionType extends AbstractType
             ]
         );
 
-        // Set default value for phone_field when creating new action
+        // Phone Type Filter - filter by mobile, landline or both
+        $builder->add(
+            'phone_type_filter',
+            ChoiceType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.phone_type_filter',
+                'label_attr' => ['class' => 'control-label'],
+                'choices'    => [
+                    'mautic.bpmessage.phone_type.all'      => 'all',
+                    'mautic.bpmessage.phone_type.mobile'   => 'mobile',
+                    'mautic.bpmessage.phone_type.landline' => 'landline',
+                ],
+                'attr' => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.phone_type_filter.tooltip',
+                ],
+                'required'   => false,
+                'empty_data' => 'mobile',
+            ]
+        );
+
+        // Set default values for phone_field and phone_type_filter when creating new action
         $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event) {
             $data = $event->getData();
-            if (is_array($data) && empty($data['phone_field'])) {
-                $data['phone_field'] = 'mobile';
+            if (is_array($data)) {
+                if (empty($data['phone_field'])) {
+                    $data['phone_field'] = 'mobile';
+                }
+                if (empty($data['phone_type_filter'])) {
+                    $data['phone_type_filter'] = 'mobile';
+                }
                 $event->setData($data);
             }
         });
