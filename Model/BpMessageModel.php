@@ -88,80 +88,45 @@ class BpMessageModel
             // Get or create active lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Extract phone numbers from the selected field
-            $phones = $this->messageMapper->extractPhonesFromField($lead, $config);
+            // Create a SINGLE placeholder entry per lead
+            // Phone extraction and phone_limit will be applied at dispatch time
+            // This allows:
+            // 1. Fetching phones from CRM API at dispatch time (not campaign trigger time)
+            // 2. Applying phone_limit to create N messages (one per phone) at dispatch time
+            $messageData = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
 
-            if (empty($phones)) {
-                // No phone - queue as FAILED for metrics tracking
-                $messageData  = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
-                $errorMessage = 'Contato sem telefone';
+            // Phone fields are intentionally empty - will be filled at dispatch time
+            // based on phone_source config (lead field or CRM API)
+            $messageData['areaCode'] = '';
+            $messageData['phone']    = '';
 
-                $this->lotManager->queueMessageWithStatus(
-                    $lot,
-                    $lead,
-                    $messageData,
-                    'FAILED',
-                    $errorMessage
-                );
+            // Queue placeholder message (PENDING status) - returns null if duplicate
+            $queue = $this->lotManager->queueMessage($lot, $lead, $messageData);
 
-                $this->logger->warning('BpMessage: Contact queued as FAILED - no phone number', [
+            if (null === $queue) {
+                $this->logger->warning('BpMessage: Duplicate contact, skipped', [
                     'lead_id'     => $lead->getId(),
                     'lot_id'      => $lot->getId(),
                     'campaign_id' => $campaign->getId(),
                 ]);
 
-                // Return success to campaign - contact is registered but marked as failed
                 return [
                     'success' => true,
-                    'message' => 'Contact registered (no phone - marked as failed)',
+                    'message' => 'Contact already queued (duplicate)',
                 ];
             }
 
-            // Queue a message for each phone number (supports collection fields)
-            $queuedCount  = 0;
-            $failedCount  = 0;
-            foreach ($phones as $phoneData) {
-                // Map lead to message format (base message without phone)
-                $messageData = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
-
-                // Add phone data
-                $messageData['areaCode'] = $phoneData['areaCode'];
-                $messageData['phone']    = $phoneData['phone'];
-
-                // Validate phone - must have at least 8 digits
-                $phoneDigits = $phoneData['areaCode'].$phoneData['phone'];
-                if (strlen($phoneDigits) < 8) {
-                    // Invalid phone - queue as FAILED so it's not sent to API
-                    $queue = $this->lotManager->queueMessageWithStatus(
-                        $lot,
-                        $lead,
-                        $messageData,
-                        'FAILED',
-                        'Telefone inválido: '.$phoneDigits
-                    );
-                    if (null !== $queue) {
-                        ++$failedCount;
-                    }
-                    continue;
-                }
-
-                // Queue message (PENDING status) - returns null if duplicate
-                $queue = $this->lotManager->queueMessage($lot, $lead, $messageData);
-                if (null !== $queue) {
-                    ++$queuedCount;
-                }
-            }
-
-            $this->logger->info('BpMessage: Messages queued successfully', [
-                'lead_id'     => $lead->getId(),
-                'lot_id'      => $lot->getId(),
-                'campaign_id' => $campaign->getId(),
-                'phone_count' => $queuedCount,
+            $this->logger->info('BpMessage: Contact placeholder queued', [
+                'lead_id'      => $lead->getId(),
+                'lot_id'       => $lot->getId(),
+                'campaign_id'  => $campaign->getId(),
+                'queue_id'     => $queue->getId(),
+                'phone_source' => $config['phone_source'] ?? 'lead',
             ]);
 
             return [
                 'success' => true,
-                'message' => sprintf('Queued %d message(s)', $queuedCount),
+                'message' => 'Contact queued (phone will be fetched at dispatch)',
             ];
         } catch (\Exception $e) {
             $this->logger->error('BpMessage: Failed to send message', [

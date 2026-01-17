@@ -211,6 +211,7 @@
                                 <th>{{ 'mautic.bpmessage.error_message'|trans }}</th>
                                 <th>{{ 'mautic.bpmessage.retry_count'|trans }}</th>
                                 <th>{{ 'mautic.core.date.added'|trans }}</th>
+                                <th>{{ 'mautic.core.details'|trans }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -233,9 +234,9 @@
                                                 {{ lead.email }}
                                             {% endif %}
                                         {% else %}
-                                            {% if payload.areaCode is defined and payload.phone is defined %}
+                                            {% if payload.areaCode is defined and payload.areaCode and payload.phone is defined and payload.phone %}
                                                 ({{ payload.areaCode }}) {{ payload.phone }}
-                                            {% elseif payload.phone is defined %}
+                                            {% elseif payload.phone is defined and payload.phone %}
                                                 {{ payload.phone }}
                                             {% else %}
                                                 <span class="text-muted">-</span>
@@ -268,6 +269,193 @@
                                         {% endif %}
                                     </td>
                                     <td>{{ message.createdAt|date('Y-m-d H:i:s') }}</td>
+                                    <td class="text-center">
+                                        {% if payload._phone_source is defined and payload._phone_source == 'crm_api' %}
+                                            <a href="javascript:void(0);" class="btn btn-primary btn-xs" data-toggle="modal" data-target="#detailsModal{{ message.id }}" title="{{ 'mautic.bpmessage.crm_api_details'|trans }}">
+                                                <span class="fa fa-eye"></span> {{ 'mautic.bpmessage.lot.action.view_details'|trans }}
+                                            </a>
+
+                                            <!-- Modal CRM API -->
+                                            <div class="modal fade" id="detailsModal{{ message.id }}" tabindex="-1" role="dialog">
+                                                <div class="modal-dialog modal-lg" role="document">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                                                            <h4 class="modal-title">{{ 'mautic.bpmessage.crm_api_details'|trans }} - #{{ message.id }}</h4>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            <div class="row">
+                                                                <div class="col-md-6">
+                                                                    <h5><strong>{{ 'mautic.bpmessage.phone_source'|trans }}</strong></h5>
+                                                                    <p><span class="label label-info">API CRM</span></p>
+
+                                                                    <h5><strong>{{ 'mautic.bpmessage.cpf_cnpj_used'|trans }}</strong></h5>
+                                                                    <p>
+                                                                        {# Mask CPF/CNPJ: show only last digits #}
+                                                                        {% set cpfCnpj = payload._cpf_cnpj_used|default('') %}
+                                                                        {% if cpfCnpj|length == 11 %}
+                                                                            {# CPF: ***.***.XXX-XX #}
+                                                                            ***.***.<strong>{{ cpfCnpj|slice(6, 3) }}-{{ cpfCnpj|slice(9, 2) }}</strong>
+                                                                        {% elseif cpfCnpj|length == 14 %}
+                                                                            {# CNPJ: **.***.***/*XXX-XX #}
+                                                                            **.***.***/<strong>{{ cpfCnpj|slice(8, 4) }}-{{ cpfCnpj|slice(12, 2) }}</strong>
+                                                                        {% elseif cpfCnpj|length > 0 %}
+                                                                            {# Partial mask for other formats #}
+                                                                            {{ '***' ~ cpfCnpj|slice(-4) }}
+                                                                        {% else %}
+                                                                            -
+                                                                        {% endif %}
+                                                                    </p>
+
+                                                                    {% if payload._phone_error is defined %}
+                                                                        <h5><strong>{{ 'mautic.bpmessage.error'|trans }}</strong></h5>
+                                                                        <p class="text-danger">{{ payload._phone_error }}</p>
+                                                                    {% endif %}
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    {% if payload._selected_phone is defined %}
+                                                                        <h5><strong>{{ 'mautic.bpmessage.selected_phone'|trans }}</strong></h5>
+                                                                        <table class="table table-condensed table-bordered">
+                                                                            <tr>
+                                                                                <th>{{ 'mautic.bpmessage.phone'|trans }}</th>
+                                                                                <td>{{ payload._selected_phone.numero|default('-') }}</td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <th>{{ 'mautic.bpmessage.score'|trans }}</th>
+                                                                                <td><span class="badge badge-success">{{ payload._selected_phone.pontuacao|default(0) }}</span></td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <th>CRM</th>
+                                                                                <td>{{ payload._selected_phone.crm|default('-') }}</td>
+                                                                            </tr>
+                                                                        </table>
+                                                                    {% endif %}
+                                                                </div>
+                                                            </div>
+
+                                                            {% if payload._crm_phones_list is defined and payload._crm_phones_list|length > 0 %}
+                                                                <hr>
+                                                                <h5><strong>{{ 'mautic.bpmessage.all_phones_from_api'|trans }}</strong> ({{ payload._crm_phones_list|length }})</h5>
+                                                                <div class="table-responsive">
+                                                                    <table class="table table-condensed table-bordered table-striped">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>#</th>
+                                                                                <th>{{ 'mautic.bpmessage.phone'|trans }}</th>
+                                                                                <th>{{ 'mautic.bpmessage.score'|trans }}</th>
+                                                                                <th>CRM</th>
+                                                                                <th>{{ 'mautic.bpmessage.selected'|trans }}</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {% for idx, phone in payload._crm_phones_list %}
+                                                                                {% set isSelected = payload._selected_phone is defined and payload._selected_phone.numero is defined and phone.numero == payload._selected_phone.numero %}
+                                                                                <tr class="{{ isSelected ? 'success' : '' }}">
+                                                                                    <td>{{ idx + 1 }}</td>
+                                                                                    <td>{{ phone.numero }}</td>
+                                                                                    <td><span class="badge">{{ phone.pontuacao }}</span></td>
+                                                                                    <td>{{ phone.crm|default('-') }}</td>
+                                                                                    <td class="text-center">
+                                                                                        {% if isSelected %}
+                                                                                            <span class="label label-success">&#10003;</span>
+                                                                                        {% else %}
+                                                                                            <span class="text-muted">-</span>
+                                                                                        {% endif %}
+                                                                                    </td>
+                                                                                </tr>
+                                                                            {% endfor %}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            {% endif %}
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-default" data-dismiss="modal">{{ 'mautic.core.close'|trans }}</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% elseif payload._phone_source is defined and payload._phone_source == 'lead' and payload._lead_phones_list is defined and payload._lead_phones_list|length > 1 %}
+                                            <a href="javascript:void(0);" class="btn btn-info btn-xs" data-toggle="modal" data-target="#detailsModal{{ message.id }}" title="{{ 'mautic.bpmessage.lead_phone_details'|trans }}">
+                                                <span class="fa fa-eye"></span> {{ 'mautic.bpmessage.lot.action.view_details'|trans }}
+                                            </a>
+
+                                            <!-- Modal Lead Phone -->
+                                            <div class="modal fade" id="detailsModal{{ message.id }}" tabindex="-1" role="dialog">
+                                                <div class="modal-dialog modal-lg" role="document">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                                                            <h4 class="modal-title">{{ 'mautic.bpmessage.lead_phone_details'|trans }} - #{{ message.id }}</h4>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            <div class="row">
+                                                                <div class="col-md-6">
+                                                                    <h5><strong>{{ 'mautic.bpmessage.phone_source'|trans }}</strong></h5>
+                                                                    <p><span class="label label-default">{{ 'mautic.bpmessage.lead_field'|trans }}</span></p>
+
+                                                                    <h5><strong>{{ 'mautic.bpmessage.phone_field_used'|trans }}</strong></h5>
+                                                                    <p>{{ payload._phone_field|default('-') }}</p>
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    {% if payload._selected_phone is defined %}
+                                                                        <h5><strong>{{ 'mautic.bpmessage.selected_phone'|trans }}</strong></h5>
+                                                                        <table class="table table-condensed table-bordered">
+                                                                            <tr>
+                                                                                <th>{{ 'mautic.bpmessage.phone'|trans }}</th>
+                                                                                <td>{{ payload._selected_phone.numero|default('-') }}</td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <th>{{ 'mautic.bpmessage.area_code'|trans }}</th>
+                                                                                <td>{{ payload._selected_phone.areaCode|default('-') }}</td>
+                                                                            </tr>
+                                                                        </table>
+                                                                    {% endif %}
+                                                                </div>
+                                                            </div>
+
+                                                            <hr>
+                                                            <h5><strong>{{ 'mautic.bpmessage.all_phones_from_lead'|trans }}</strong> ({{ payload._lead_phones_list|length }})</h5>
+                                                            <div class="table-responsive">
+                                                                <table class="table table-condensed table-bordered table-striped">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>#</th>
+                                                                            <th>{{ 'mautic.bpmessage.phone'|trans }}</th>
+                                                                            <th>{{ 'mautic.bpmessage.area_code'|trans }}</th>
+                                                                            <th>{{ 'mautic.bpmessage.selected'|trans }}</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {% for idx, phone in payload._lead_phones_list %}
+                                                                            {% set isSelected = payload._selected_phone is defined and payload._selected_phone.numero is defined and phone.numero == payload._selected_phone.numero %}
+                                                                            <tr class="{{ isSelected ? 'success' : '' }}">
+                                                                                <td>{{ idx + 1 }}</td>
+                                                                                <td>{{ phone.numero }}</td>
+                                                                                <td>{{ phone.areaCode|default('-') }}</td>
+                                                                                <td class="text-center">
+                                                                                    {% if isSelected %}
+                                                                                        <span class="label label-success">&#10003;</span>
+                                                                                    {% else %}
+                                                                                        <span class="text-muted">-</span>
+                                                                                    {% endif %}
+                                                                                </td>
+                                                                            </tr>
+                                                                        {% endfor %}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-default" data-dismiss="modal">{{ 'mautic.core.close'|trans }}</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>

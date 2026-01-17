@@ -524,13 +524,86 @@ class MessageMapper
     }
 
     /**
+     * Extract ALL phone numbers from a selected contact field (without applying phone_limit).
+     *
+     * This method is used by LotManager to get all phones first, then apply phone_limit
+     * at dispatch time while maintaining full traceability of all available phones.
+     *
+     * @return array Array of ['normalized' => ['areaCode' => string, 'phone' => string], 'original' => string]
+     */
+    public function extractAllPhonesFromField(Lead $lead, array $config): array
+    {
+        $fieldAlias = $config['phone_field'] ?? null;
+        if (empty($fieldAlias)) {
+            return [];
+        }
+
+        $fieldValue = $lead->getFieldValue($fieldAlias);
+        if (empty($fieldValue)) {
+            return [];
+        }
+
+        // Get phone type filter from config (all, mobile, landline)
+        $phoneTypeFilter = $config['phone_type_filter'] ?? 'all';
+
+        $this->logger->debug('BpMessage: Extracting ALL phones from field (no limit)', [
+            'lead_id'           => $lead->getId(),
+            'field_alias'       => $fieldAlias,
+            'phone_type_filter' => $phoneTypeFilter,
+        ]);
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
+            $decoded = json_decode($fieldValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                $phones = [];
+                foreach ($decoded as $phone) {
+                    if (!empty($phone)) {
+                        $normalized = $this->normalizePhone((string) $phone);
+
+                        // Apply phone type filter
+                        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                            $phones[] = [
+                                'normalized' => $normalized,
+                                'original'   => (string) $phone,
+                            ];
+                        }
+                    }
+                }
+
+                // NOTE: phone_limit is NOT applied here - it should be applied by the caller
+
+                $this->logger->debug('BpMessage: Extracted ALL phones from collection (no limit)', [
+                    'lead_id'     => $lead->getId(),
+                    'phone_count' => count($phones),
+                ]);
+
+                return $phones;
+            }
+        }
+
+        // Single value - apply filter but phone_limit does not apply
+        $normalized = $this->normalizePhone((string) $fieldValue);
+        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+            return [
+                [
+                    'normalized' => $normalized,
+                    'original'   => (string) $fieldValue,
+                ],
+            ];
+        }
+
+        return [];
+    }
+
+    /**
      * Normalize a phone number extracting area code and phone.
      *
      * Brazilian format: assumes first 2 digits are area code (DDD).
      *
      * @return array ['areaCode' => string, 'phone' => string]
      */
-    private function normalizePhone(string $phone): array
+    public function normalizePhone(string $phone): array
     {
         // Remove all non-numeric characters
         $digits = preg_replace('/[^0-9]/', '', $phone);
@@ -559,7 +632,7 @@ class MessageMapper
      * @param array  $normalizedPhone ['areaCode' => string, 'phone' => string]
      * @param string $filter          'all', 'mobile', or 'landline'
      */
-    private function matchesPhoneTypeFilter(array $normalizedPhone, string $filter): bool
+    public function matchesPhoneTypeFilter(array $normalizedPhone, string $filter): bool
     {
         if ('all' === $filter) {
             return true;

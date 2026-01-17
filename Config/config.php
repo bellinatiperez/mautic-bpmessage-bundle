@@ -52,16 +52,12 @@ return [
                 'id'        => 'mautic_bpmessage_root',
                 'iconClass' => 'ri-message-2-fill',
                 'priority'  => 63,
+                'route'     => 'mautic_bpmessage_lot_index',
                 'checks'    => [
                     'integration' => [
                         'BpMessage' => [
                             'enabled' => true,
                         ],
-                    ],
-                ],
-                'children' => [
-                    'mautic.bpmessage.menu.lots' => [
-                        'route' => 'mautic_bpmessage_lot_index',
                     ],
                 ],
             ],
@@ -141,6 +137,12 @@ return [
                     'monolog.logger.mautic',
                 ],
             ],
+            'mautic.bpmessage.http.crm_client' => [
+                'class'     => MauticPlugin\MauticBpMessageBundle\Http\CRMClient::class,
+                'arguments' => [
+                    'monolog.logger.mautic',
+                ],
+            ],
             'mautic.bpmessage.repository.lot' => [
                 'class'     => Doctrine\ORM\EntityRepository::class,
                 'factory'   => ['@doctrine.orm.entity_manager', 'getRepository'],
@@ -163,6 +165,8 @@ return [
                     'monolog.logger.mautic',
                     'mautic.bpmessage.service.routes',
                     'mautic.bpmessage.service.message_mapper',
+                    'mautic.bpmessage.http.crm_client',
+                    'mautic.helper.integration',
                 ],
             ],
             'mautic.bpmessage.service.message_mapper' => [

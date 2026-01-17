@@ -315,7 +315,63 @@ class BpMessageActionType extends AbstractType
             ]
         );
 
-        // Set default values for phone_field and phone_type_filter when creating new action
+        // Phone Source - where to fetch phone numbers from
+        // Options: lead (from contact field), crm_api (from external CRM API)
+        $builder->add(
+            'phone_source',
+            ChoiceType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.phone_source',
+                'label_attr' => ['class' => 'control-label'],
+                'choices'    => [
+                    'mautic.bpmessage.phone_source.lead'    => 'lead',
+                    'mautic.bpmessage.phone_source.crm_api' => 'crm_api',
+                ],
+                'attr' => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.phone_source.tooltip',
+                ],
+                'required'   => false,
+                'empty_data' => 'lead',
+            ]
+        );
+
+        // CPF/CNPJ Field - required when phone_source is crm_api
+        // Select the contact field that contains the CPF/CNPJ for CRM API lookup
+        $builder->add(
+            'cpf_cnpj_field',
+            LeadFieldsType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.cpf_cnpj_field',
+                'label_attr' => ['class' => 'control-label'],
+                'attr'       => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.cpf_cnpj_field.tooltip',
+                ],
+                'required'            => false,
+                'with_tags'           => false,
+                'with_company_fields' => false,
+            ]
+        );
+
+        // Contract Field - optional for CRM API lookup
+        $builder->add(
+            'contract_field',
+            LeadFieldsType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.contract_field',
+                'label_attr' => ['class' => 'control-label'],
+                'attr'       => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.contract_field.tooltip',
+                ],
+                'required'            => false,
+                'with_tags'           => false,
+                'with_company_fields' => false,
+            ]
+        );
+
+        // Set default values for phone_field, phone_type_filter and phone_source when creating new action
         $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event) {
             $data = $event->getData();
             if (is_array($data)) {
@@ -324,6 +380,9 @@ class BpMessageActionType extends AbstractType
                 }
                 if (empty($data['phone_type_filter'])) {
                     $data['phone_type_filter'] = 'mobile';
+                }
+                if (empty($data['phone_source'])) {
+                    $data['phone_source'] = 'lead';
                 }
                 $event->setData($data);
             }

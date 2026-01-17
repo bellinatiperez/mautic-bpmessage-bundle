@@ -210,6 +210,58 @@ class BpMessageIntegration extends AbstractIntegration
                     ],
                 ]
             );
+
+            // CRM API Configuration (for external phone lookup)
+            $builder->add(
+                'crm_api_enabled',
+                \Symfony\Component\Form\Extension\Core\Type\ChoiceType::class,
+                [
+                    'label'      => 'mautic.bpmessage.integration.crm_api_enabled',
+                    'label_attr' => ['class' => 'control-label'],
+                    'required'   => false,
+                    'data'       => $data['crm_api_enabled'] ?? false,
+                    'choices'    => [
+                        'mautic.core.no'  => false,
+                        'mautic.core.yes' => true,
+                    ],
+                    'attr' => [
+                        'class'   => 'form-control',
+                        'tooltip' => 'mautic.bpmessage.integration.crm_api_enabled.tooltip',
+                    ],
+                ]
+            );
+
+            $builder->add(
+                'crm_api_base_url',
+                TextType::class,
+                [
+                    'label'      => 'mautic.bpmessage.integration.crm_api_base_url',
+                    'label_attr' => ['class' => 'control-label'],
+                    'required'   => false,
+                    'data'       => $data['crm_api_base_url'] ?? '',
+                    'attr'       => [
+                        'class'       => 'form-control',
+                        'tooltip'     => 'mautic.bpmessage.integration.crm_api_base_url.tooltip',
+                        'placeholder' => 'https://hml-api-interna.bellinatiperez.com.br',
+                    ],
+                ]
+            );
+
+            $builder->add(
+                'crm_api_key',
+                TextType::class,
+                [
+                    'label'      => 'mautic.bpmessage.integration.crm_api_key',
+                    'label_attr' => ['class' => 'control-label'],
+                    'required'   => false,
+                    'data'       => $data['crm_api_key'] ?? '',
+                    'attr'       => [
+                        'class'       => 'form-control',
+                        'tooltip'     => 'mautic.bpmessage.integration.crm_api_key.tooltip',
+                        'placeholder' => 'bpapi_xxxx...',
+                    ],
+                ]
+            );
         }
     }
 
@@ -251,5 +303,35 @@ class BpMessageIntegration extends AbstractIntegration
         $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
 
         return (int) ($featureSettings['routes_cache_ttl'] ?? 14400);
+    }
+
+    /**
+     * Check if CRM API is enabled for phone lookup.
+     */
+    public function isCrmApiEnabled(): bool
+    {
+        $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
+
+        return (bool) ($featureSettings['crm_api_enabled'] ?? false);
+    }
+
+    /**
+     * Get CRM API base URL from integration settings.
+     */
+    public function getCrmApiBaseUrl(): ?string
+    {
+        $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
+
+        return $featureSettings['crm_api_base_url'] ?? null;
+    }
+
+    /**
+     * Get CRM API key from integration settings.
+     */
+    public function getCrmApiKey(): ?string
+    {
+        $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
+
+        return $featureSettings['crm_api_key'] ?? null;
     }
 }

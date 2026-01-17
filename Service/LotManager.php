@@ -9,7 +9,10 @@ use Mautic\CampaignBundle\Entity\Campaign;
 use Mautic\LeadBundle\Entity\Lead;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageLot;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
+use Mautic\PluginBundle\Helper\IntegrationHelper;
 use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
+use MauticPlugin\MauticBpMessageBundle\Http\CRMClient;
+use MauticPlugin\MauticBpMessageBundle\Integration\BpMessageIntegration;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -22,6 +25,8 @@ class LotManager
     private LoggerInterface $logger;
     private ?RoutesService $routesService = null;
     private ?MessageMapper $messageMapper = null;
+    private ?CRMClient $crmClient = null;
+    private ?IntegrationHelper $integrationHelper = null;
 
     public function __construct(
         EntityManager $entityManager,
@@ -29,12 +34,16 @@ class LotManager
         LoggerInterface $logger,
         ?RoutesService $routesService = null,
         ?MessageMapper $messageMapper = null,
+        ?CRMClient $crmClient = null,
+        ?IntegrationHelper $integrationHelper = null,
     ) {
-        $this->entityManager = $entityManager;
-        $this->client        = $client;
-        $this->logger        = $logger;
-        $this->routesService = $routesService;
-        $this->messageMapper = $messageMapper;
+        $this->entityManager     = $entityManager;
+        $this->client            = $client;
+        $this->logger            = $logger;
+        $this->routesService     = $routesService;
+        $this->messageMapper     = $messageMapper;
+        $this->crmClient         = $crmClient;
+        $this->integrationHelper = $integrationHelper;
     }
 
     /**
@@ -43,6 +52,60 @@ class LotManager
     public function setRoutesService(RoutesService $routesService): void
     {
         $this->routesService = $routesService;
+    }
+
+    /**
+     * Configure CRM Client with integration settings.
+     * Must be called before using CRM API features.
+     *
+     * @return bool True if CRM API is enabled and configured, false otherwise
+     */
+    private function configureCrmClient(): bool
+    {
+        if (null === $this->crmClient || null === $this->integrationHelper) {
+            return false;
+        }
+
+        /** @var BpMessageIntegration|null $integration */
+        $integration = $this->integrationHelper->getIntegrationObject('BpMessage');
+
+        if (!$integration) {
+            $this->logger->warning('BpMessage: Integration not found for CRM API');
+
+            return false;
+        }
+
+        $settings = $integration->getIntegrationSettings();
+        if (!$settings || !$settings->getIsPublished()) {
+            $this->logger->warning('BpMessage: Integration not published for CRM API');
+
+            return false;
+        }
+
+        if (!$integration->isCrmApiEnabled()) {
+            $this->logger->debug('BpMessage: CRM API is not enabled in integration settings');
+
+            return false;
+        }
+
+        $crmApiUrl = $integration->getCrmApiBaseUrl();
+        $crmApiKey = $integration->getCrmApiKey();
+
+        if (empty($crmApiUrl) || empty($crmApiKey)) {
+            $this->logger->warning('BpMessage: CRM API URL or API Key not configured');
+
+            return false;
+        }
+
+        // Configure the CRM client
+        $this->crmClient->setBaseUrl($crmApiUrl);
+        $this->crmClient->setApiKey($crmApiKey);
+
+        $this->logger->info('BpMessage: CRM Client configured', [
+            'api_url' => $crmApiUrl,
+        ]);
+
+        return true;
     }
 
     /**
@@ -269,6 +332,11 @@ class LotManager
         $lotConfig['phone_limit'] = (int) ($config['phone_limit'] ?? 0);
         $lotConfig['phone_type_filter'] = $config['phone_type_filter'] ?? 'all';
 
+        // Save phone source config for CRM API lookup
+        $lotConfig['phone_source'] = $config['phone_source'] ?? 'lead';
+        $lotConfig['cpf_cnpj_field'] = $config['cpf_cnpj_field'] ?? '';
+        $lotConfig['contract_field'] = $config['contract_field'] ?? '';
+
         $lot->setCreateLotPayload($lotConfig);
 
         // Save to database
@@ -412,6 +480,9 @@ class LotManager
             'phone_field'       => $lotConfig['phone_field'] ?? 'mobile',
             'phone_limit'       => $lotConfig['phone_limit'] ?? 0,
             'phone_type_filter' => $lotConfig['phone_type_filter'] ?? 'all',
+            'phone_source'      => $lotConfig['phone_source'] ?? 'lead',
+            'cpf_cnpj_field'    => $lotConfig['cpf_cnpj_field'] ?? '',
+            'contract_field'    => $lotConfig['contract_field'] ?? '',
         ];
 
         // Get all pending messages
@@ -460,42 +531,276 @@ class LotManager
             // Track updated payloads for persistence
             $updatedPayloads = [];
 
-            // OPTIMIZATION: Fetch all phones in a single query instead of N queries
-            if (null !== $this->messageMapper) {
+            // Determine phone source: lead (from contact field) or crm_api (from external API)
+            $phoneSource = $phoneConfig['phone_source'] ?? 'lead';
+
+            // Configure CRM Client if using CRM API source
+            $crmApiConfigured = false;
+            if ('crm_api' === $phoneSource && null !== $this->crmClient) {
+                $crmApiConfigured = $this->configureCrmClient();
+                if (!$crmApiConfigured) {
+                    $this->logger->warning('BpMessage: CRM API not configured, falling back to lead source');
+                    $phoneSource = 'lead';
+                }
+            }
+
+            if ('crm_api' === $phoneSource && $crmApiConfigured) {
+                // PHONE SOURCE: CRM API
+                // Fetch phones from external CRM API based on CPF/CNPJ
+                $this->logger->info('BpMessage: Using CRM API as phone source', [
+                    'lot_id'     => $lot->getId(),
+                    'batch_size' => count($batch),
+                ]);
+
+                $cpfCnpjField  = $phoneConfig['cpf_cnpj_field'] ?? '';
+                $contractField = $phoneConfig['contract_field'] ?? '';
+
+                if (empty($cpfCnpjField)) {
+                    $this->logger->error('BpMessage: CRM API phone source configured but cpf_cnpj_field is empty');
+                    // Fallback to lead source
+                    $phoneSource = 'lead';
+                } else {
+                    // Build map of leadId -> queue and fetch CPF/CNPJ values
+                    $leadIds = [];
+                    foreach ($batch as $queue) {
+                        $leadIds[] = $queue->getLead()->getId();
+                    }
+                    $leadIds = array_unique($leadIds);
+
+                    // Fetch CPF/CNPJ and contract values in a single query
+                    $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
+                    $selectFields = "id, {$cpfCnpjField} as cpf_cnpj_value";
+                    if (!empty($contractField)) {
+                        $selectFields .= ", {$contractField} as contract_value";
+                    }
+                    $leadsData = $connection->fetchAllAssociative(
+                        "SELECT {$selectFields} FROM leads WHERE id IN ({$placeholders})",
+                        $leadIds
+                    );
+
+                    // Index lead data by ID
+                    $leadsDataById = [];
+                    foreach ($leadsData as $row) {
+                        $leadsDataById[$row['id']] = $row;
+                    }
+
+                    // Fetch phones from CRM API for each unique CPF/CNPJ
+                    $phonesByCpfCnpj = [];
+                    $uniqueCpfCnpjs  = [];
+                    foreach ($leadsDataById as $leadData) {
+                        $cpfCnpj = preg_replace('/\D/', '', $leadData['cpf_cnpj_value'] ?? '');
+                        if (!empty($cpfCnpj) && !isset($uniqueCpfCnpjs[$cpfCnpj])) {
+                            $uniqueCpfCnpjs[$cpfCnpj] = $leadData['contract_value'] ?? '';
+                        }
+                    }
+
+                    // Call CRM API for each unique CPF/CNPJ
+                    foreach ($uniqueCpfCnpjs as $cpfCnpj => $contrato) {
+                        // Ensure cpfCnpj is string (PHP converts numeric array keys to int)
+                        $cpfCnpjStr = (string) $cpfCnpj;
+                        $result = $this->crmClient->fetchPhones($cpfCnpjStr, $contrato);
+                        if ($result['success'] && !empty($result['phones'])) {
+                            $phonesByCpfCnpj[$cpfCnpjStr] = $result['phones'];
+                        } else {
+                            $this->logger->warning('BpMessage: CRM API returned no phones', [
+                                'cpfCnpj' => substr($cpfCnpjStr, 0, 3).'***'.substr($cpfCnpjStr, -2),
+                                'error'   => $result['error'] ?? 'No phones found',
+                            ]);
+                            $phonesByCpfCnpj[$cpfCnpjStr] = [];
+                        }
+                    }
+
+                    // Process each queue item using CRM API phones
+                    // Now with phone_limit support: create N queue entries (one per phone up to limit)
+                    $phoneTypeFilter = $phoneConfig['phone_type_filter'] ?? 'all';
+                    $phoneLimit      = (int) ($phoneConfig['phone_limit'] ?? 0);
+
+                    // Track new queues created for additional phones
+                    $newQueuesCreated = [];
+
+                    foreach ($batch as $queue) {
+                        $leadId   = $queue->getLead()->getId();
+                        $leadData = $leadsDataById[$leadId] ?? null;
+
+                        if (null === $leadData) {
+                            // Clear phone from payload for traceability (CRM API was configured but lookup failed)
+                            $payload = $queue->getPayloadArray();
+                            $payload['areaCode'] = '';
+                            $payload['phone'] = '';
+                            $payload['_phone_source'] = 'crm_api';
+                            $payload['_phone_error'] = 'Contato não encontrado';
+                            $updatedPayloads[$queue->getId()] = $payload;
+
+                            $failedQueues[] = [
+                                'queue' => $queue,
+                                'error' => 'Contato não encontrado',
+                            ];
+                            continue;
+                        }
+
+                        $cpfCnpj = preg_replace('/\D/', '', $leadData['cpf_cnpj_value'] ?? '');
+                        if (empty($cpfCnpj)) {
+                            // Clear phone from payload for traceability
+                            $payload = $queue->getPayloadArray();
+                            $payload['areaCode'] = '';
+                            $payload['phone'] = '';
+                            $payload['_phone_source'] = 'crm_api';
+                            $payload['_phone_error'] = 'CPF/CNPJ vazio';
+                            $updatedPayloads[$queue->getId()] = $payload;
+
+                            $failedQueues[] = [
+                                'queue' => $queue,
+                                'error' => 'Contato sem CPF/CNPJ para busca na API CRM',
+                            ];
+                            continue;
+                        }
+
+                        $crmPhones = $phonesByCpfCnpj[$cpfCnpj] ?? [];
+                        if (empty($crmPhones)) {
+                            // Clear phone from payload for traceability
+                            $payload = $queue->getPayloadArray();
+                            $payload['areaCode'] = '';
+                            $payload['phone'] = '';
+                            $payload['_phone_source'] = 'crm_api';
+                            $payload['_cpf_cnpj_used'] = $cpfCnpj;
+                            $payload['_phone_error'] = 'Nenhum telefone na API CRM';
+                            $updatedPayloads[$queue->getId()] = $payload;
+
+                            $failedQueues[] = [
+                                'queue' => $queue,
+                                'error' => 'Nenhum telefone encontrado na API CRM',
+                            ];
+                            continue;
+                        }
+
+                        // Filter phones by type and collect valid ones
+                        $validPhones = [];
+                        foreach ($crmPhones as $crmPhone) {
+                            $phoneNumber = $crmPhone['numeroTelefone'] ?? '';
+                            if (empty($phoneNumber)) {
+                                continue;
+                            }
+
+                            // Normalize phone using MessageMapper
+                            $normalized = $this->messageMapper->normalizePhone($phoneNumber);
+
+                            // Apply phone type filter
+                            if (!$this->messageMapper->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                                continue;
+                            }
+
+                            // Validate phone length
+                            $phoneDigits = $normalized['areaCode'].$normalized['phone'];
+                            if (strlen($phoneDigits) < 8) {
+                                continue;
+                            }
+
+                            $validPhones[] = [
+                                'normalized' => $normalized,
+                                'original' => $crmPhone,
+                            ];
+                        }
+
+                        if (empty($validPhones)) {
+                            // Clear phone from payload for traceability
+                            $payload = $queue->getPayloadArray();
+                            $payload['areaCode'] = '';
+                            $payload['phone'] = '';
+                            $payload['_phone_source'] = 'crm_api';
+                            $payload['_cpf_cnpj_used'] = $cpfCnpj;
+                            $payload['_phone_error'] = 'Nenhum telefone válido compatível com filtro';
+                            $updatedPayloads[$queue->getId()] = $payload;
+
+                            $failedQueues[] = [
+                                'queue' => $queue,
+                                'error' => 'Nenhum telefone válido compatível com filtro na API CRM',
+                            ];
+                            continue;
+                        }
+
+                        // Apply phone_limit: select only the first N phones (already sorted by pontuacao)
+                        if ($phoneLimit > 0 && count($validPhones) > $phoneLimit) {
+                            $phonesToUse = array_slice($validPhones, 0, $phoneLimit);
+                        } else {
+                            $phonesToUse = $validPhones;
+                        }
+
+                        // Build traceability data (list of all phones from API)
+                        $crmPhonesList = array_map(function ($phone) {
+                            return [
+                                'numero' => $phone['numeroTelefone'] ?? '',
+                                'pontuacao' => $phone['pontuacao'] ?? 0,
+                                'crm' => $phone['crm'] ?? '',
+                            ];
+                        }, $crmPhones);
+
+                        // Create one message for each phone (up to phone_limit)
+                        foreach ($phonesToUse as $phoneIndex => $phoneData) {
+                            $normalized = $phoneData['normalized'];
+                            $originalPhone = $phoneData['original'];
+
+                            // Build payload with phone and traceability data
+                            $payload = $queue->getPayloadArray();
+                            $payload['areaCode'] = $normalized['areaCode'];
+                            $payload['phone'] = $normalized['phone'];
+                            $payload['_phone_source'] = 'crm_api';
+                            $payload['_cpf_cnpj_used'] = $cpfCnpj;
+
+                            // Traceability: which phone was selected for THIS message
+                            $payload['_selected_phone'] = [
+                                'numero' => $originalPhone['numeroTelefone'] ?? '',
+                                'pontuacao' => $originalPhone['pontuacao'] ?? 0,
+                                'crm' => $originalPhone['crm'] ?? '',
+                            ];
+
+                            // Traceability: all phones returned by CRM API
+                            $payload['_crm_phones_list'] = $crmPhonesList;
+
+                            if (0 === $phoneIndex) {
+                                // First phone: update the original placeholder queue
+                                $messages[] = $payload;
+                                $updatedPayloads[$queue->getId()] = $payload;
+                                $validQueues[] = $queue;
+                            } else {
+                                // Additional phones: create new queue entries
+                                $newQueue = new BpMessageQueue();
+                                $newQueue->setLead($queue->getLead());
+                                $newQueue->setLot($lot);
+                                $newQueue->setStatus('PENDING');
+                                $newQueue->setPayloadJson(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                                $this->entityManager->persist($newQueue);
+
+                                $messages[] = $payload;
+                                $validQueues[] = $newQueue;
+                                $newQueuesCreated[] = $newQueue;
+                            }
+                        }
+                    }
+
+                    // Flush new queue entries to database
+                    if (!empty($newQueuesCreated)) {
+                        $this->entityManager->flush();
+                        $this->logger->info('BpMessage: Created additional queue entries for phone_limit', [
+                            'lot_id' => $lot->getId(),
+                            'new_queues_count' => count($newQueuesCreated),
+                        ]);
+                    }
+                }
+            }
+
+            // PHONE SOURCE: LEAD (from contact field) - with phone_limit support
+            if ('lead' === $phoneSource && null !== $this->messageMapper) {
                 $phoneField = $phoneConfig['phone_field'] ?? 'mobile';
+                $newQueuesCreatedLead = [];
 
-                // Build map of leadId -> queue for quick lookup
-                $queuesByLeadId = [];
-                $leadIds        = [];
+                // Process each queue item - get ALL phones and apply phone_limit
                 foreach ($batch as $queue) {
-                    $leadId                    = $queue->getLead()->getId();
-                    $queuesByLeadId[$leadId][] = $queue;
-                    $leadIds[]                 = $leadId;
-                }
-                $leadIds = array_unique($leadIds);
+                    $lead = $queue->getLead();
 
-                // Single query to fetch all phone values
-                $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
-                $phonesData   = $connection->fetchAllAssociative(
-                    "SELECT id, {$phoneField} as phone_value FROM leads WHERE id IN ({$placeholders})",
-                    $leadIds
-                );
+                    // Get ALL phones from lead field (without limit applied)
+                    $allPhones = $this->messageMapper->extractAllPhonesFromField($lead, $phoneConfig);
 
-                // Index phone values by lead ID
-                $phonesByLeadId = [];
-                foreach ($phonesData as $row) {
-                    $phonesByLeadId[$row['id']] = $row['phone_value'];
-                }
-
-                // Process each queue item using pre-fetched phone data
-                foreach ($batch as $queue) {
-                    $leadId     = $queue->getLead()->getId();
-                    $phoneValue = $phonesByLeadId[$leadId] ?? null;
-
-                    // Parse phone value using MessageMapper logic
-                    $currentPhone = $this->messageMapper->parsePhoneValue($phoneValue, $phoneConfig);
-
-                    if (empty($currentPhone)) {
+                    if (empty($allPhones)) {
                         $failedQueues[] = [
                             'queue' => $queue,
                             'error' => 'Contato sem telefone no momento do disparo',
@@ -503,28 +808,105 @@ class LotManager
                         continue;
                     }
 
-                    // Validate phone length
-                    $phoneDigits = $currentPhone['areaCode'].$currentPhone['phone'];
-                    if (strlen($phoneDigits) < 8) {
+                    // Filter out invalid phones (less than 8 digits)
+                    $validPhones = [];
+                    foreach ($allPhones as $phoneData) {
+                        $normalized  = $phoneData['normalized'];
+                        $phoneDigits = $normalized['areaCode'].$normalized['phone'];
+                        if (strlen($phoneDigits) >= 8) {
+                            $validPhones[] = $phoneData;
+                        }
+                    }
+
+                    if (empty($validPhones)) {
                         $failedQueues[] = [
                             'queue' => $queue,
-                            'error' => 'Telefone inválido: '.$phoneDigits,
+                            'error' => 'Nenhum telefone válido encontrado no campo do lead',
                         ];
                         continue;
                     }
 
-                    // Update payload with current phone
-                    $payload             = $queue->getPayloadArray();
-                    $payload['areaCode'] = $currentPhone['areaCode'];
-                    $payload['phone']    = $currentPhone['phone'];
+                    // Apply phone_limit: select only the first N phones
+                    if ($phoneLimit > 0 && count($validPhones) > $phoneLimit) {
+                        $phonesToUse = array_slice($validPhones, 0, $phoneLimit);
+                        $this->logger->debug('BpMessage: Applying phone_limit for LEAD source', [
+                            'lead_id'        => $lead->getId(),
+                            'total_phones'   => count($validPhones),
+                            'phone_limit'    => $phoneLimit,
+                            'phones_to_use'  => count($phonesToUse),
+                        ]);
+                    } else {
+                        $phonesToUse = $validPhones;
+                    }
 
-                    $messages[] = $payload;
+                    // Build traceability list of all phones from lead field
+                    $leadPhonesList = array_map(function ($p) {
+                        return [
+                            'numero' => $p['original'] ?? '',
+                            'areaCode' => $p['normalized']['areaCode'] ?? '',
+                            'phone' => $p['normalized']['phone'] ?? '',
+                        ];
+                    }, $validPhones);
 
-                    // Track updated payload for persistence (traceability)
-                    $updatedPayloads[$queue->getId()] = $payload;
-                    $validQueues[]                    = $queue;
+                    // Create one message for each phone (up to phone_limit)
+                    foreach ($phonesToUse as $phoneIndex => $phoneData) {
+                        $normalized     = $phoneData['normalized'];
+                        $originalPhone  = $phoneData['original'];
+
+                        // Build payload with phone and traceability data
+                        $payload             = $queue->getPayloadArray();
+                        $payload['areaCode'] = $normalized['areaCode'];
+                        $payload['phone']    = $normalized['phone'];
+                        $payload['_phone_source'] = 'lead';
+                        $payload['_phone_field']  = $phoneField;
+
+                        // Traceability: selected phone for THIS message
+                        $payload['_selected_phone'] = [
+                            'numero'   => $originalPhone,
+                            'areaCode' => $normalized['areaCode'],
+                            'phone'    => $normalized['phone'],
+                        ];
+
+                        // Traceability: complete list of all phones from lead field
+                        $payload['_lead_phones_list'] = $leadPhonesList;
+
+                        if (0 === $phoneIndex) {
+                            // First phone: update the original placeholder queue
+                            $messages[] = $payload;
+                            $updatedPayloads[$queue->getId()] = $payload;
+                            $validQueues[] = $queue;
+                        } else {
+                            // Additional phones: create new queue entries
+                            $newQueue = new BpMessageQueue();
+                            $newQueue->setLead($lead);
+                            $newQueue->setLot($lot);
+                            $newQueue->setStatus('PENDING');
+                            $newQueue->setPayloadJson(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                            $this->entityManager->persist($newQueue);
+
+                            $messages[] = $payload;
+                            $validQueues[] = $newQueue;
+                            $newQueuesCreatedLead[] = $newQueue;
+
+                            $this->logger->debug('BpMessage: Created additional queue entry for phone_limit (LEAD source)', [
+                                'lead_id'     => $lead->getId(),
+                                'lot_id'      => $lot->getId(),
+                                'phone_index' => $phoneIndex,
+                                'phone'       => $normalized['areaCode'].'-'.$normalized['phone'],
+                            ]);
+                        }
+                    }
                 }
-            } else {
+
+                // Flush new queue entries to database
+                if (!empty($newQueuesCreatedLead)) {
+                    $this->entityManager->flush();
+                    $this->logger->info('BpMessage: Created additional queue entries for phone_limit (LEAD source)', [
+                        'lot_id' => $lot->getId(),
+                        'new_queues_count' => count($newQueuesCreatedLead),
+                    ]);
+                }
+            } elseif ('lead' === $phoneSource && null === $this->messageMapper) {
                 // Fallback: use stored payload (legacy behavior)
                 foreach ($batch as $queue) {
                     $messages[]    = $queue->getPayloadArray();
