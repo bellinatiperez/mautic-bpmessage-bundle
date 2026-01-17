@@ -20,15 +20,18 @@ class EmailLotManager
     private EntityManager $entityManager;
     private BpMessageClient $client;
     private LoggerInterface $logger;
+    private ?EmailMessageMapper $emailMessageMapper = null;
 
     public function __construct(
         EntityManager $entityManager,
         BpMessageClient $client,
         LoggerInterface $logger,
+        ?EmailMessageMapper $emailMessageMapper = null,
     ) {
-        $this->entityManager = $entityManager;
-        $this->client        = $client;
-        $this->logger        = $logger;
+        $this->entityManager      = $entityManager;
+        $this->client             = $client;
+        $this->logger             = $logger;
+        $this->emailMessageMapper = $emailMessageMapper;
     }
 
     /**
@@ -193,6 +196,10 @@ class EmailLotManager
             $lotConfig = array_merge($lotConfig, $lotDataWithoutDates);
         }
 
+        // Save email config for refreshing contact at dispatch time
+        $lotConfig['email_field'] = $config['email_field'] ?? 'email';
+        $lotConfig['email_limit'] = (int) ($config['email_limit'] ?? 0);
+
         $lot->setCreateLotPayload($lotConfig);
 
         // Save to database
@@ -327,6 +334,13 @@ class EmailLotManager
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
+        // Get email config from lot payload for refreshing contact at dispatch time
+        $lotConfig   = $lot->getCreateLotPayload();
+        $emailConfig = [
+            'email_field' => $lotConfig['email_field'] ?? 'email',
+            'email_limit' => $lotConfig['email_limit'] ?? 0,
+        ];
+
         // Get all pending emails
         $qb = $this->entityManager->createQueryBuilder();
         $qb->select('q')
@@ -356,6 +370,9 @@ class EmailLotManager
         $batches = array_chunk($pendingEmails, 5000);
         $success = true;
 
+        // Get database connection once for all batches
+        $connection = $this->entityManager->getConnection();
+
         foreach ($batches as $batchIndex => $batch) {
             $this->logger->info('BpMessage Email: Sending batch', [
                 'lot_id'      => $lot->getId(),
@@ -363,9 +380,120 @@ class EmailLotManager
                 'batch_size'  => count($batch),
             ]);
 
-            $emails = array_map(function (BpMessageQueue $queue) {
-                return $queue->getPayloadArray();
-            }, $batch);
+            $emails       = [];
+            $validQueues  = [];
+            $failedQueues = [];
+
+            // Track updated payloads for persistence
+            $updatedPayloads = [];
+
+            // OPTIMIZATION: Fetch all emails in a single query instead of N queries
+            if (null !== $this->emailMessageMapper) {
+                $emailField = $emailConfig['email_field'] ?? 'email';
+
+                // Build map of leadId -> queue for quick lookup
+                $leadIds = [];
+                foreach ($batch as $queue) {
+                    $leadIds[] = $queue->getLead()->getId();
+                }
+                $leadIds = array_unique($leadIds);
+
+                // Single query to fetch all email values
+                $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
+                $emailsData   = $connection->fetchAllAssociative(
+                    "SELECT id, {$emailField} as email_value FROM leads WHERE id IN ({$placeholders})",
+                    $leadIds
+                );
+
+                // Index email values by lead ID
+                $emailsByLeadId = [];
+                foreach ($emailsData as $row) {
+                    $emailsByLeadId[$row['id']] = $row['email_value'];
+                }
+
+                // Process each queue item using pre-fetched email data
+                foreach ($batch as $queue) {
+                    $leadId     = $queue->getLead()->getId();
+                    $emailValue = $emailsByLeadId[$leadId] ?? null;
+
+                    // Parse email value using EmailMessageMapper logic
+                    $currentEmail = $this->emailMessageMapper->parseEmailValue($emailValue);
+
+                    if (empty($currentEmail)) {
+                        $failedQueues[] = [
+                            'queue' => $queue,
+                            'error' => 'Contato sem email no momento do disparo',
+                        ];
+                        continue;
+                    }
+
+                    // Update payload with current email
+                    $payload       = $queue->getPayloadArray();
+                    $payload['to'] = $currentEmail;
+
+                    $emails[] = $payload;
+
+                    // Track updated payload for persistence (traceability)
+                    $updatedPayloads[$queue->getId()] = $payload;
+                    $validQueues[]                    = $queue;
+                }
+            } else {
+                // Fallback: use stored payload (legacy behavior)
+                foreach ($batch as $queue) {
+                    $emails[]      = $queue->getPayloadArray();
+                    $validQueues[] = $queue;
+                }
+            }
+
+            // OPTIMIZATION: Batch update payloads using single query with CASE WHEN
+            if (!empty($updatedPayloads)) {
+                // Build batch update query
+                $cases  = [];
+                $ids    = [];
+                $params = [];
+                foreach ($updatedPayloads as $queueId => $payload) {
+                    $cases[]  = "WHEN id = ? THEN ?";
+                    $params[] = $queueId;
+                    $params[] = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $ids[]    = $queueId;
+                }
+
+                $idPlaceholders = implode(',', array_fill(0, count($ids), '?'));
+                $sql            = "UPDATE bpmessage_queue SET payload_json = CASE ".implode(' ', $cases)." END WHERE id IN ({$idPlaceholders})";
+                $params         = array_merge($params, $ids);
+
+                $connection->executeStatement($sql, $params);
+
+                $this->logger->debug('BpMessage Email: Updated queue payloads with refreshed emails (batch)', [
+                    'lot_id'        => $lot->getId(),
+                    'updated_count' => count($updatedPayloads),
+                ]);
+            }
+
+            // OPTIMIZATION: Batch update failed queues
+            if (!empty($failedQueues)) {
+                $failedIds = array_map(fn ($f) => $f['queue']->getId(), $failedQueues);
+                $placeholders = implode(',', array_fill(0, count($failedIds), '?'));
+                $params       = array_merge(['FAILED', 'Contato sem email no momento do disparo'], $failedIds);
+                $connection->executeStatement(
+                    "UPDATE bpmessage_queue SET status = ?, error_message = ? WHERE id IN ({$placeholders})",
+                    $params
+                );
+
+                $this->logger->info('BpMessage Email: Marked failed emails (no valid email at dispatch time)', [
+                    'lot_id'       => $lot->getId(),
+                    'failed_count' => count($failedQueues),
+                ]);
+            }
+
+            // Skip API call if no valid emails
+            if (empty($emails)) {
+                $this->logger->warning('BpMessage Email: No valid emails in batch after email refresh', [
+                    'lot_id'      => $lot->getId(),
+                    'batch_index' => $batchIndex,
+                ]);
+                continue;
+            }
 
             $this->client->setBaseUrl($lot->getApiBaseUrl());
             $result = $this->client->addEmailsToLot((int) $lot->getExternalLotId(), $emails);
@@ -374,7 +502,7 @@ class EmailLotManager
                 // Mark emails as sent
                 $ids = array_map(function (BpMessageQueue $queue) {
                     return $queue->getId();
-                }, $batch);
+                }, $validQueues);
 
                 $qb = $this->entityManager->createQueryBuilder();
                 $qb->update(BpMessageQueue::class, 'q')
@@ -402,12 +530,9 @@ class EmailLotManager
                 // Mark emails as failed using bulk update for reliability
                 $queueIds = array_map(function (BpMessageQueue $queue) {
                     return $queue->getId();
-                }, $batch);
+                }, $validQueues);
 
                 $this->entityManager->flush();
-
-                // Force update with SQL to ensure persistence (EntityManager flush may not work in all scenarios)
-                $connection = $this->entityManager->getConnection();
 
                 // Update lot status and error message
                 $connection->executeStatement(

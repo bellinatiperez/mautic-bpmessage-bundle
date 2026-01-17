@@ -507,6 +507,136 @@ class EmailMessageMapper
     }
 
     /**
+     * Refresh email address from lead at dispatch time.
+     * Returns the first valid email from the configured field.
+     *
+     * @return string|null Email address or null if no valid email
+     */
+    public function refreshEmailFromLead(Lead $lead, array $config): ?string
+    {
+        $emails = $this->extractEmailsFromField($lead, $config);
+
+        return !empty($emails) ? $emails[0] : null;
+    }
+
+    /**
+     * Refresh email data directly from database at dispatch time.
+     *
+     * This method bypasses Doctrine entity hydration and fetches the email field
+     * directly from the leads table to ensure we get the current value.
+     *
+     * @param \Doctrine\DBAL\Connection $connection Database connection
+     * @param int                       $leadId     Lead ID
+     * @param array                     $config     Email config with email_field, email_limit
+     *
+     * @return string|null Email address or null if no valid email
+     */
+    public function refreshEmailFromDatabase(\Doctrine\DBAL\Connection $connection, int $leadId, array $config): ?string
+    {
+        $fieldAlias = $config['email_field'] ?? 'email';
+
+        // Fetch the email field value directly from leads table
+        try {
+            $fieldValue = $connection->fetchOne(
+                "SELECT {$fieldAlias} FROM leads WHERE id = ?",
+                [$leadId]
+            );
+        } catch (\Exception $e) {
+            $this->logger->error('BpMessage Email: Failed to fetch email from DB', [
+                'lead_id'     => $leadId,
+                'field_alias' => $fieldAlias,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (empty($fieldValue)) {
+            $this->logger->debug('BpMessage Email: Email field is empty in DB', [
+                'lead_id'     => $leadId,
+                'field_alias' => $fieldAlias,
+            ]);
+
+            return null;
+        }
+
+        $this->logger->debug('BpMessage Email: Fetched email from DB', [
+            'lead_id'     => $leadId,
+            'field_alias' => $fieldAlias,
+            'field_value' => $fieldValue,
+        ]);
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
+            $decoded = json_decode($fieldValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                foreach ($decoded as $email) {
+                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $this->logger->debug('BpMessage Email: Email refreshed from DB (collection)', [
+                            'lead_id' => $leadId,
+                            'email'   => $email,
+                        ]);
+
+                        return trim((string) $email);
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        // Single value - validate email format
+        if (filter_var($fieldValue, FILTER_VALIDATE_EMAIL)) {
+            $this->logger->debug('BpMessage Email: Email refreshed from DB (single)', [
+                'lead_id' => $leadId,
+                'email'   => $fieldValue,
+            ]);
+
+            return trim((string) $fieldValue);
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse an email value (already fetched from DB) and return valid email.
+     *
+     * This method is used for batch processing where email values are pre-fetched
+     * in a single query for performance optimization.
+     *
+     * @param mixed $emailValue Raw email value from database (string, JSON array, or null)
+     *
+     * @return string|null Valid email address or null if no valid email
+     */
+    public function parseEmailValue($emailValue): ?string
+    {
+        if (empty($emailValue)) {
+            return null;
+        }
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($emailValue) && str_starts_with(trim($emailValue), '[')) {
+            $decoded = json_decode($emailValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                foreach ($decoded as $email) {
+                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        return trim((string) $email);
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        // Single value - validate email format
+        if (filter_var($emailValue, FILTER_VALIDATE_EMAIL)) {
+            return trim((string) $emailValue);
+        }
+
+        return null;
+    }
+
+    /**
      * Validate that a lead has all required fields for BpMessage email.
      *
      * @return array ['valid' => bool, 'errors' => string[]]

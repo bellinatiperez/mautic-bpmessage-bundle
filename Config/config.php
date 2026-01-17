@@ -162,6 +162,7 @@ return [
                     'mautic.bpmessage.http.client',
                     'monolog.logger.mautic',
                     'mautic.bpmessage.service.routes',
+                    'mautic.bpmessage.service.message_mapper',
                 ],
             ],
             'mautic.bpmessage.service.message_mapper' => [
@@ -176,6 +177,7 @@ return [
                     'doctrine.orm.entity_manager',
                     'mautic.bpmessage.http.client',
                     'monolog.logger.mautic',
+                    'mautic.bpmessage.service.email_message_mapper',
                 ],
             ],
             'mautic.bpmessage.service.email_message_mapper' => [

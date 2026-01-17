@@ -586,6 +586,164 @@ class MessageMapper
     }
 
     /**
+     * Refresh phone data from lead at dispatch time.
+     * Returns the first valid phone from the configured field.
+     *
+     * @return array|null ['areaCode' => string, 'phone' => string] or null if no valid phone
+     */
+    public function refreshPhoneFromLead(Lead $lead, array $config): ?array
+    {
+        $phones = $this->extractPhonesFromField($lead, $config);
+
+        return !empty($phones) ? $phones[0] : null;
+    }
+
+    /**
+     * Refresh phone data directly from database at dispatch time.
+     *
+     * This method bypasses Doctrine entity hydration and fetches the phone field
+     * directly from the leads table to ensure we get the current value.
+     *
+     * @param \Doctrine\DBAL\Connection $connection Database connection
+     * @param int                       $leadId     Lead ID
+     * @param array                     $config     Phone config with phone_field, phone_limit, phone_type_filter
+     *
+     * @return array|null ['areaCode' => string, 'phone' => string] or null if no valid phone
+     */
+    public function refreshPhoneFromDatabase(\Doctrine\DBAL\Connection $connection, int $leadId, array $config): ?array
+    {
+        $fieldAlias = $config['phone_field'] ?? null;
+        if (empty($fieldAlias)) {
+            $this->logger->debug('BpMessage: No phone_field configured for DB refresh', [
+                'lead_id' => $leadId,
+            ]);
+
+            return null;
+        }
+
+        // Fetch the phone field value directly from leads table
+        try {
+            $fieldValue = $connection->fetchOne(
+                "SELECT {$fieldAlias} FROM leads WHERE id = ?",
+                [$leadId]
+            );
+        } catch (\Exception $e) {
+            $this->logger->error('BpMessage: Failed to fetch phone from DB', [
+                'lead_id'     => $leadId,
+                'field_alias' => $fieldAlias,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (empty($fieldValue)) {
+            $this->logger->debug('BpMessage: Phone field is empty in DB', [
+                'lead_id'     => $leadId,
+                'field_alias' => $fieldAlias,
+            ]);
+
+            return null;
+        }
+
+        $this->logger->debug('BpMessage: Fetched phone from DB', [
+            'lead_id'     => $leadId,
+            'field_alias' => $fieldAlias,
+            'field_value' => $fieldValue,
+        ]);
+
+        // Get phone limit and type filter from config
+        $phoneLimit      = (int) ($config['phone_limit'] ?? 0);
+        $phoneTypeFilter = $config['phone_type_filter'] ?? 'all';
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
+            $decoded = json_decode($fieldValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                foreach ($decoded as $phone) {
+                    if (!empty($phone)) {
+                        $normalized = $this->normalizePhone((string) $phone);
+
+                        // Apply phone type filter and return first matching
+                        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                            $this->logger->debug('BpMessage: Phone refreshed from DB (collection)', [
+                                'lead_id'  => $leadId,
+                                'areaCode' => $normalized['areaCode'],
+                                'phone'    => $normalized['phone'],
+                            ]);
+
+                            return $normalized;
+                        }
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        // Single value
+        $normalized = $this->normalizePhone((string) $fieldValue);
+        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+            $this->logger->debug('BpMessage: Phone refreshed from DB (single)', [
+                'lead_id'  => $leadId,
+                'areaCode' => $normalized['areaCode'],
+                'phone'    => $normalized['phone'],
+            ]);
+
+            return $normalized;
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse a phone value (already fetched from DB) and return normalized phone data.
+     *
+     * This method is used for batch processing where phone values are pre-fetched
+     * in a single query for performance optimization.
+     *
+     * @param mixed $phoneValue Raw phone value from database (string, JSON array, or null)
+     * @param array $config     Phone config with phone_type_filter
+     *
+     * @return array|null ['areaCode' => string, 'phone' => string] or null if no valid phone
+     */
+    public function parsePhoneValue($phoneValue, array $config): ?array
+    {
+        if (empty($phoneValue)) {
+            return null;
+        }
+
+        $phoneTypeFilter = $config['phone_type_filter'] ?? 'all';
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($phoneValue) && str_starts_with(trim($phoneValue), '[')) {
+            $decoded = json_decode($phoneValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                foreach ($decoded as $phone) {
+                    if (!empty($phone)) {
+                        $normalized = $this->normalizePhone((string) $phone);
+
+                        // Apply phone type filter and return first matching
+                        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                            return $normalized;
+                        }
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        // Single value
+        $normalized = $this->normalizePhone((string) $phoneValue);
+        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+            return $normalized;
+        }
+
+        return null;
+    }
+
+    /**
      * Validate that a lead has all required fields for BpMessage.
      *
      * @return array ['valid' => bool, 'errors' => string[]]

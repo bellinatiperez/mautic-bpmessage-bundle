@@ -21,17 +21,20 @@ class LotManager
     private BpMessageClient $client;
     private LoggerInterface $logger;
     private ?RoutesService $routesService = null;
+    private ?MessageMapper $messageMapper = null;
 
     public function __construct(
         EntityManager $entityManager,
         BpMessageClient $client,
         LoggerInterface $logger,
         ?RoutesService $routesService = null,
+        ?MessageMapper $messageMapper = null,
     ) {
         $this->entityManager = $entityManager;
         $this->client        = $client;
         $this->logger        = $logger;
         $this->routesService = $routesService;
+        $this->messageMapper = $messageMapper;
     }
 
     /**
@@ -261,6 +264,11 @@ class LotManager
             $lotConfig = array_merge($lotConfig, $lotDataWithoutDates);
         }
 
+        // Save phone config for refreshing contact at dispatch time
+        $lotConfig['phone_field'] = $config['phone_field'] ?? 'mobile';
+        $lotConfig['phone_limit'] = (int) ($config['phone_limit'] ?? 0);
+        $lotConfig['phone_type_filter'] = $config['phone_type_filter'] ?? 'all';
+
         $lot->setCreateLotPayload($lotConfig);
 
         // Save to database
@@ -398,6 +406,14 @@ class LotManager
             'external_lot_id' => $lot->getExternalLotId(),
         ]);
 
+        // Get phone config from lot payload for refreshing contact at dispatch time
+        $lotConfig   = $lot->getCreateLotPayload();
+        $phoneConfig = [
+            'phone_field'       => $lotConfig['phone_field'] ?? 'mobile',
+            'phone_limit'       => $lotConfig['phone_limit'] ?? 0,
+            'phone_type_filter' => $lotConfig['phone_type_filter'] ?? 'all',
+        ];
+
         // Get all pending messages
         $qb = $this->entityManager->createQueryBuilder();
         $qb->select('q')
@@ -427,6 +443,9 @@ class LotManager
         $batches = array_chunk($pendingMessages, 5000);
         $success = true;
 
+        // Get database connection once for all batches
+        $connection = $this->entityManager->getConnection();
+
         foreach ($batches as $batchIndex => $batch) {
             $this->logger->info('BpMessage: Sending batch', [
                 'lot_id'      => $lot->getId(),
@@ -434,9 +453,144 @@ class LotManager
                 'batch_size'  => count($batch),
             ]);
 
-            $messages = array_map(function (BpMessageQueue $queue) {
-                return $queue->getPayloadArray();
-            }, $batch);
+            $messages     = [];
+            $validQueues  = [];
+            $failedQueues = [];
+
+            // Track updated payloads for persistence
+            $updatedPayloads = [];
+
+            // OPTIMIZATION: Fetch all phones in a single query instead of N queries
+            if (null !== $this->messageMapper) {
+                $phoneField = $phoneConfig['phone_field'] ?? 'mobile';
+
+                // Build map of leadId -> queue for quick lookup
+                $queuesByLeadId = [];
+                $leadIds        = [];
+                foreach ($batch as $queue) {
+                    $leadId                    = $queue->getLead()->getId();
+                    $queuesByLeadId[$leadId][] = $queue;
+                    $leadIds[]                 = $leadId;
+                }
+                $leadIds = array_unique($leadIds);
+
+                // Single query to fetch all phone values
+                $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
+                $phonesData   = $connection->fetchAllAssociative(
+                    "SELECT id, {$phoneField} as phone_value FROM leads WHERE id IN ({$placeholders})",
+                    $leadIds
+                );
+
+                // Index phone values by lead ID
+                $phonesByLeadId = [];
+                foreach ($phonesData as $row) {
+                    $phonesByLeadId[$row['id']] = $row['phone_value'];
+                }
+
+                // Process each queue item using pre-fetched phone data
+                foreach ($batch as $queue) {
+                    $leadId     = $queue->getLead()->getId();
+                    $phoneValue = $phonesByLeadId[$leadId] ?? null;
+
+                    // Parse phone value using MessageMapper logic
+                    $currentPhone = $this->messageMapper->parsePhoneValue($phoneValue, $phoneConfig);
+
+                    if (empty($currentPhone)) {
+                        $failedQueues[] = [
+                            'queue' => $queue,
+                            'error' => 'Contato sem telefone no momento do disparo',
+                        ];
+                        continue;
+                    }
+
+                    // Validate phone length
+                    $phoneDigits = $currentPhone['areaCode'].$currentPhone['phone'];
+                    if (strlen($phoneDigits) < 8) {
+                        $failedQueues[] = [
+                            'queue' => $queue,
+                            'error' => 'Telefone inválido: '.$phoneDigits,
+                        ];
+                        continue;
+                    }
+
+                    // Update payload with current phone
+                    $payload             = $queue->getPayloadArray();
+                    $payload['areaCode'] = $currentPhone['areaCode'];
+                    $payload['phone']    = $currentPhone['phone'];
+
+                    $messages[] = $payload;
+
+                    // Track updated payload for persistence (traceability)
+                    $updatedPayloads[$queue->getId()] = $payload;
+                    $validQueues[]                    = $queue;
+                }
+            } else {
+                // Fallback: use stored payload (legacy behavior)
+                foreach ($batch as $queue) {
+                    $messages[]    = $queue->getPayloadArray();
+                    $validQueues[] = $queue;
+                }
+            }
+
+            // OPTIMIZATION: Batch update payloads using single query with CASE WHEN
+            if (!empty($updatedPayloads)) {
+                // Build batch update query
+                $cases  = [];
+                $ids    = [];
+                $params = [];
+                $i      = 0;
+                foreach ($updatedPayloads as $queueId => $payload) {
+                    $cases[] = "WHEN id = ? THEN ?";
+                    $params[] = $queueId;
+                    $params[] = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $ids[]    = $queueId;
+                    ++$i;
+                }
+
+                $idPlaceholders = implode(',', array_fill(0, count($ids), '?'));
+                $sql            = "UPDATE bpmessage_queue SET payload_json = CASE ".implode(' ', $cases)." END WHERE id IN ({$idPlaceholders})";
+                $params         = array_merge($params, $ids);
+
+                $connection->executeStatement($sql, $params);
+
+                $this->logger->debug('BpMessage: Updated queue payloads with refreshed phone numbers (batch)', [
+                    'lot_id'        => $lot->getId(),
+                    'updated_count' => count($updatedPayloads),
+                ]);
+            }
+
+            // OPTIMIZATION: Batch update failed queues by error type
+            if (!empty($failedQueues)) {
+                // Group by error message for efficient batch update
+                $failedByError = [];
+                foreach ($failedQueues as $failedData) {
+                    $error                     = $failedData['error'];
+                    $failedByError[$error][] = $failedData['queue']->getId();
+                }
+
+                foreach ($failedByError as $error => $queueIds) {
+                    $placeholders = implode(',', array_fill(0, count($queueIds), '?'));
+                    $params       = array_merge(['FAILED', $error], $queueIds);
+                    $connection->executeStatement(
+                        "UPDATE bpmessage_queue SET status = ?, error_message = ? WHERE id IN ({$placeholders})",
+                        $params
+                    );
+                }
+
+                $this->logger->info('BpMessage: Marked failed messages (no valid phone at dispatch time)', [
+                    'lot_id'       => $lot->getId(),
+                    'failed_count' => count($failedQueues),
+                ]);
+            }
+
+            // Skip API call if no valid messages
+            if (empty($messages)) {
+                $this->logger->warning('BpMessage: No valid messages in batch after phone refresh', [
+                    'lot_id'      => $lot->getId(),
+                    'batch_index' => $batchIndex,
+                ]);
+                continue;
+            }
 
             $this->client->setBaseUrl($lot->getApiBaseUrl());
             $result = $this->client->addMessagesToLot((int) $lot->getExternalLotId(), $messages);
@@ -445,7 +599,7 @@ class LotManager
                 // Mark messages as sent
                 $ids = array_map(function (BpMessageQueue $queue) {
                     return $queue->getId();
-                }, $batch);
+                }, $validQueues);
 
                 $qb = $this->entityManager->createQueryBuilder();
                 $qb->update(BpMessageQueue::class, 'q')
@@ -473,7 +627,7 @@ class LotManager
                 // Mark messages as failed using bulk update for reliability
                 $queueIds = array_map(function (BpMessageQueue $queue) {
                     return $queue->getId();
-                }, $batch);
+                }, $validQueues);
 
                 $this->entityManager->flush();
 
