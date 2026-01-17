@@ -104,6 +104,40 @@ class BpMessageEmailActionType extends AbstractType
             ]
         );
 
+        // CPF/CNPJ Field - used to populate cpfCnpjReceiver in the message payload
+        $builder->add(
+            'cpf_cnpj_field',
+            LeadFieldsType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.cpf_cnpj_field',
+                'label_attr' => ['class' => 'control-label'],
+                'attr'       => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.cpf_cnpj_field.tooltip',
+                ],
+                'required'            => false,
+                'with_tags'           => false,
+                'with_company_fields' => false,
+            ]
+        );
+
+        // Contract Field - used to populate contract in the message payload
+        $builder->add(
+            'contract_field',
+            LeadFieldsType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.contract_field',
+                'label_attr' => ['class' => 'control-label'],
+                'attr'       => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.contract_field.tooltip',
+                ],
+                'required'            => false,
+                'with_tags'           => false,
+                'with_company_fields' => false,
+            ]
+        );
+
         // Email From
         $builder->add(
             'email_from',

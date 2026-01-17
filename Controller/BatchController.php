@@ -327,14 +327,15 @@ class BatchController
             return new RedirectResponse($this->urlGenerator->generate('mautic_bpmessage_lot_index'));
         }
 
-        // Get lot messages
+        // Get lot messages ordered by lead ID then queue ID (groups messages by lead)
         $messages = $em->createQueryBuilder()
             ->select('q', 'l')
             ->from(BpMessageQueue::class, 'q')
             ->join('q.lead', 'l')
             ->where('q.lot = :lot')
             ->setParameter('lot', $lot)
-            ->orderBy('q.createdAt', 'ASC')
+            ->orderBy('l.id', 'ASC')
+            ->addOrderBy('q.id', 'ASC')
             ->getQuery()
             ->getResult();
 

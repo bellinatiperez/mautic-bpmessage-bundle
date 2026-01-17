@@ -212,25 +212,7 @@ class BpMessageIntegration extends AbstractIntegration
             );
 
             // CRM API Configuration (for external phone lookup)
-            $builder->add(
-                'crm_api_enabled',
-                \Symfony\Component\Form\Extension\Core\Type\ChoiceType::class,
-                [
-                    'label'      => 'mautic.bpmessage.integration.crm_api_enabled',
-                    'label_attr' => ['class' => 'control-label'],
-                    'required'   => false,
-                    'data'       => $data['crm_api_enabled'] ?? false,
-                    'choices'    => [
-                        'mautic.core.no'  => false,
-                        'mautic.core.yes' => true,
-                    ],
-                    'attr' => [
-                        'class'   => 'form-control',
-                        'tooltip' => 'mautic.bpmessage.integration.crm_api_enabled.tooltip',
-                    ],
-                ]
-            );
-
+            // Note: CRM API is enabled per-action via phone_source field
             $builder->add(
                 'crm_api_base_url',
                 TextType::class,
@@ -303,16 +285,6 @@ class BpMessageIntegration extends AbstractIntegration
         $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
 
         return (int) ($featureSettings['routes_cache_ttl'] ?? 14400);
-    }
-
-    /**
-     * Check if CRM API is enabled for phone lookup.
-     */
-    public function isCrmApiEnabled(): bool
-    {
-        $featureSettings = $this->getIntegrationSettings()->getFeatureSettings();
-
-        return (bool) ($featureSettings['crm_api_enabled'] ?? false);
     }
 
     /**

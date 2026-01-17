@@ -74,56 +74,25 @@ class BpMessageEmailModel
             // Get or create active email lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Extract emails from the configured field (supports Collection fields)
-            $emails = $this->messageMapper->extractEmailsFromField($lead, $config);
+            // Create ONE placeholder per lead (email will be resolved at dispatch time)
+            // This follows the same pattern as LotManager for SMS/WhatsApp
+            // The actual emails are fetched and expanded in sendLotEmails()
+            $emailData = $this->messageMapper->mapLeadToEmailWithAddress($lead, '', $config, $campaign, $lot);
 
-            if (empty($emails)) {
-                // No emails found - queue as FAILED for metrics tracking
-                $emailData    = $this->messageMapper->mapLeadToEmailWithAddress($lead, '', $config, $campaign, $lot);
-                $errorMessage = 'Contato sem email';
+            // Queue placeholder (PENDING status)
+            $this->lotManager->queueEmail($lot, $lead, $emailData);
 
-                $this->lotManager->queueEmailWithStatus(
-                    $lot,
-                    $lead,
-                    $emailData,
-                    'FAILED',
-                    $errorMessage
-                );
-
-                $this->logger->warning('BpMessage Email: Contact queued as FAILED - no email address', [
-                    'lead_id'     => $lead->getId(),
-                    'lot_id'      => $lot->getId(),
-                    'campaign_id' => $campaign->getId(),
-                ]);
-
-                // Return success to campaign - contact is registered but marked as failed
-                return [
-                    'success' => true,
-                    'message' => 'Contact registered (no email - marked as failed)',
-                ];
-            }
-
-            // Queue one email for each address found
-            $queuedCount = 0;
-            foreach ($emails as $emailTo) {
-                // Map lead to email format with specific email address
-                $emailData = $this->messageMapper->mapLeadToEmailWithAddress($lead, $emailTo, $config, $campaign, $lot);
-
-                // Queue email normally (PENDING status)
-                $this->lotManager->queueEmail($lot, $lead, $emailData);
-                ++$queuedCount;
-
-                $this->logger->info('BpMessage Email: Email queued successfully', [
-                    'lead_id'     => $lead->getId(),
-                    'lot_id'      => $lot->getId(),
-                    'campaign_id' => $campaign->getId(),
-                    'email_to'    => $emailTo,
-                ]);
-            }
+            $this->logger->info('BpMessage Email: Placeholder queued for lead', [
+                'lead_id'     => $lead->getId(),
+                'lot_id'      => $lot->getId(),
+                'campaign_id' => $campaign->getId(),
+                'email_field' => $config['email_field'] ?? 'email',
+                'email_limit' => $config['email_limit'] ?? 0,
+            ]);
 
             return [
                 'success' => true,
-                'message' => sprintf('%d email(s) queued successfully', $queuedCount),
+                'message' => 'Email placeholder queued successfully',
             ];
         } catch (\Exception $e) {
             $this->logger->error('BpMessage Email: Failed to send email', [

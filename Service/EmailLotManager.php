@@ -200,6 +200,10 @@ class EmailLotManager
         $lotConfig['email_field'] = $config['email_field'] ?? 'email';
         $lotConfig['email_limit'] = (int) ($config['email_limit'] ?? 0);
 
+        // Save CPF/CNPJ and Contract field config for payload population
+        $lotConfig['cpf_cnpj_field'] = $config['cpf_cnpj_field'] ?? '';
+        $lotConfig['contract_field'] = $config['contract_field'] ?? '';
+
         $lot->setCreateLotPayload($lotConfig);
 
         // Save to database
@@ -337,8 +341,10 @@ class EmailLotManager
         // Get email config from lot payload for refreshing contact at dispatch time
         $lotConfig   = $lot->getCreateLotPayload();
         $emailConfig = [
-            'email_field' => $lotConfig['email_field'] ?? 'email',
-            'email_limit' => $lotConfig['email_limit'] ?? 0,
+            'email_field'    => $lotConfig['email_field'] ?? 'email',
+            'email_limit'    => $lotConfig['email_limit'] ?? 0,
+            'cpf_cnpj_field' => $lotConfig['cpf_cnpj_field'] ?? '',
+            'contract_field' => $lotConfig['contract_field'] ?? '',
         ];
 
         // Get all pending emails
@@ -387,9 +393,15 @@ class EmailLotManager
             // Track updated payloads for persistence
             $updatedPayloads = [];
 
+            // Track new queue entries created for additional emails
+            $newQueuesCreated = [];
+
             // OPTIMIZATION: Fetch all emails in a single query instead of N queries
             if (null !== $this->emailMessageMapper) {
-                $emailField = $emailConfig['email_field'] ?? 'email';
+                $emailField    = $emailConfig['email_field'] ?? 'email';
+                $emailLimit    = (int) ($emailConfig['email_limit'] ?? 0);
+                $cpfCnpjField  = $emailConfig['cpf_cnpj_field'] ?? '';
+                $contractField = $emailConfig['contract_field'] ?? '';
 
                 // Build map of leadId -> queue for quick lookup
                 $leadIds = [];
@@ -398,28 +410,39 @@ class EmailLotManager
                 }
                 $leadIds = array_unique($leadIds);
 
-                // Single query to fetch all email values
+                // Build SELECT fields dynamically
+                $selectFields = "id, {$emailField} as email_value";
+                if (!empty($cpfCnpjField)) {
+                    $selectFields .= ", {$cpfCnpjField} as cpf_cnpj_value";
+                }
+                if (!empty($contractField)) {
+                    $selectFields .= ", {$contractField} as contract_value";
+                }
+
+                // Single query to fetch all values
                 $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
                 $emailsData   = $connection->fetchAllAssociative(
-                    "SELECT id, {$emailField} as email_value FROM leads WHERE id IN ({$placeholders})",
+                    "SELECT {$selectFields} FROM leads WHERE id IN ({$placeholders})",
                     $leadIds
                 );
 
-                // Index email values by lead ID
-                $emailsByLeadId = [];
+                // Index lead data by lead ID
+                $leadsDataById = [];
                 foreach ($emailsData as $row) {
-                    $emailsByLeadId[$row['id']] = $row['email_value'];
+                    $leadsDataById[$row['id']] = $row;
                 }
 
-                // Process each queue item using pre-fetched email data
+                // Process each queue item using pre-fetched data
+                // Expand placeholder to multiple emails based on email_limit
                 foreach ($batch as $queue) {
-                    $leadId     = $queue->getLead()->getId();
-                    $emailValue = $emailsByLeadId[$leadId] ?? null;
+                    $leadId   = $queue->getLead()->getId();
+                    $leadData = $leadsDataById[$leadId] ?? [];
+                    $emailValue = $leadData['email_value'] ?? null;
 
-                    // Parse email value using EmailMessageMapper logic
-                    $currentEmail = $this->emailMessageMapper->parseEmailValue($emailValue);
+                    // Parse ALL emails from field (not just first)
+                    $allEmails = $this->emailMessageMapper->parseAllEmailValues($emailValue);
 
-                    if (empty($currentEmail)) {
+                    if (empty($allEmails)) {
                         $failedQueues[] = [
                             'queue' => $queue,
                             'error' => 'Contato sem email no momento do disparo',
@@ -427,15 +450,80 @@ class EmailLotManager
                         continue;
                     }
 
-                    // Update payload with current email
-                    $payload       = $queue->getPayloadArray();
-                    $payload['to'] = $currentEmail;
+                    // Apply email_limit if configured
+                    if ($emailLimit > 0 && count($allEmails) > $emailLimit) {
+                        $emailsToUse = array_slice($allEmails, 0, $emailLimit);
+                        $this->logger->debug('BpMessage Email: Applying email_limit', [
+                            'lead_id'       => $leadId,
+                            'total_emails'  => count($allEmails),
+                            'email_limit'   => $emailLimit,
+                            'emails_to_use' => count($emailsToUse),
+                        ]);
+                    } else {
+                        $emailsToUse = $allEmails;
+                    }
 
-                    $emails[] = $payload;
+                    // Build traceability list of all emails from lead field
+                    $leadEmailsList = array_map(fn ($e) => $e['email'], $allEmails);
 
-                    // Track updated payload for persistence (traceability)
-                    $updatedPayloads[$queue->getId()] = $payload;
-                    $validQueues[]                    = $queue;
+                    // Create one message for each email (up to email_limit)
+                    foreach ($emailsToUse as $emailIndex => $emailData) {
+                        $emailAddress = $emailData['email'];
+
+                        // Build payload
+                        $payload       = $queue->getPayloadArray();
+                        $payload['to'] = $emailAddress;
+                        $payload['_email_source'] = 'lead';
+                        $payload['_email_field']  = $emailField;
+
+                        // Add cpfCnpjReceiver and contract to payload (if fields configured)
+                        if (!empty($cpfCnpjField) && !empty($leadData['cpf_cnpj_value'])) {
+                            $payload['cpfCnpjReceiver'] = preg_replace('/\D/', '', $leadData['cpf_cnpj_value']);
+                        }
+                        if (!empty($contractField) && !empty($leadData['contract_value'])) {
+                            $payload['contract'] = $leadData['contract_value'];
+                        }
+
+                        // Traceability
+                        $payload['_selected_email']   = $emailAddress;
+                        $payload['_email_index']      = $emailIndex;
+                        $payload['_lead_emails_list'] = $leadEmailsList;
+
+                        if (0 === $emailIndex) {
+                            // First email: update original placeholder queue
+                            $emails[] = $payload;
+                            $updatedPayloads[$queue->getId()] = $payload;
+                            $validQueues[] = $queue;
+                        } else {
+                            // Additional emails: create new queue entries
+                            $newQueue = new BpMessageQueue();
+                            $newQueue->setLead($queue->getLead());
+                            $newQueue->setLot($lot);
+                            $newQueue->setStatus('PENDING');
+                            $newQueue->setPayloadJson(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                            $this->entityManager->persist($newQueue);
+
+                            $emails[] = $payload;
+                            $validQueues[] = $newQueue;
+                            $newQueuesCreated[] = $newQueue;
+
+                            $this->logger->debug('BpMessage Email: Created additional queue entry for email_limit', [
+                                'lead_id'     => $leadId,
+                                'lot_id'      => $lot->getId(),
+                                'email_index' => $emailIndex,
+                                'email'       => $emailAddress,
+                            ]);
+                        }
+                    }
+                }
+
+                // Flush new queue entries to database
+                if (!empty($newQueuesCreated)) {
+                    $this->entityManager->flush();
+                    $this->logger->info('BpMessage Email: Created additional queue entries for email_limit', [
+                        'lot_id'           => $lot->getId(),
+                        'new_queues_count' => count($newQueuesCreated),
+                    ]);
                 }
             } else {
                 // Fallback: use stored payload (legacy behavior)

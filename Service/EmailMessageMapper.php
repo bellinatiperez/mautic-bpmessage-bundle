@@ -637,6 +637,54 @@ class EmailMessageMapper
     }
 
     /**
+     * Parse ALL emails from a pre-fetched value (for batch processing).
+     *
+     * This method returns ALL valid emails from a collection field, not just the first.
+     * Used by EmailLotManager at dispatch time to create multiple queue entries.
+     *
+     * @param mixed $emailValue Raw email value from database (string, JSON array, or null)
+     *
+     * @return array Array of ['email' => string, 'original' => mixed]
+     */
+    public function parseAllEmailValues($emailValue): array
+    {
+        $emails = [];
+
+        if (empty($emailValue)) {
+            return [];
+        }
+
+        // Check if it's a JSON array (collection field)
+        if (is_string($emailValue) && str_starts_with(trim($emailValue), '[')) {
+            $decoded = json_decode($emailValue, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                foreach ($decoded as $email) {
+                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $emails[] = [
+                            'email'    => trim((string) $email),
+                            'original' => $email,
+                        ];
+                    }
+                }
+
+                return $emails;
+            }
+        }
+
+        // Single value - validate email format
+        if (filter_var($emailValue, FILTER_VALIDATE_EMAIL)) {
+            return [
+                [
+                    'email'    => trim((string) $emailValue),
+                    'original' => $emailValue,
+                ],
+            ];
+        }
+
+        return [];
+    }
+
+    /**
      * Validate that a lead has all required fields for BpMessage email.
      *
      * @return array ['valid' => bool, 'errors' => string[]]

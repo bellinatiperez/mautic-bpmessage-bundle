@@ -82,12 +82,6 @@ class LotManager
             return false;
         }
 
-        if (!$integration->isCrmApiEnabled()) {
-            $this->logger->debug('BpMessage: CRM API is not enabled in integration settings');
-
-            return false;
-        }
-
         $crmApiUrl = $integration->getCrmApiBaseUrl();
         $crmApiKey = $integration->getCrmApiKey();
 
@@ -590,15 +584,15 @@ class LotManager
                     foreach ($leadsDataById as $leadData) {
                         $cpfCnpj = preg_replace('/\D/', '', $leadData['cpf_cnpj_value'] ?? '');
                         if (!empty($cpfCnpj) && !isset($uniqueCpfCnpjs[$cpfCnpj])) {
-                            $uniqueCpfCnpjs[$cpfCnpj] = $leadData['contract_value'] ?? '';
+                            $uniqueCpfCnpjs[$cpfCnpj] = true;
                         }
                     }
 
                     // Call CRM API for each unique CPF/CNPJ
-                    foreach ($uniqueCpfCnpjs as $cpfCnpj => $contrato) {
+                    foreach (array_keys($uniqueCpfCnpjs) as $cpfCnpj) {
                         // Ensure cpfCnpj is string (PHP converts numeric array keys to int)
                         $cpfCnpjStr = (string) $cpfCnpj;
-                        $result = $this->crmClient->fetchPhones($cpfCnpjStr, $contrato);
+                        $result = $this->crmClient->fetchPhones($cpfCnpjStr);
                         if ($result['success'] && !empty($result['phones'])) {
                             $phonesByCpfCnpj[$cpfCnpjStr] = $result['phones'];
                         } else {
@@ -746,6 +740,13 @@ class LotManager
                             $payload['_phone_source'] = 'crm_api';
                             $payload['_cpf_cnpj_used'] = $cpfCnpj;
 
+                            // Add cpfCnpjReceiver and contract to payload
+                            $payload['cpfCnpjReceiver'] = $cpfCnpj;
+                            $contractValue = $leadData['contract_value'] ?? '';
+                            if (!empty($contractValue)) {
+                                $payload['contract'] = $contractValue;
+                            }
+
                             // Traceability: which phone was selected for THIS message
                             $payload['_selected_phone'] = [
                                 'numero' => $originalPhone['numeroTelefone'] ?? '',
@@ -791,7 +792,32 @@ class LotManager
             // PHONE SOURCE: LEAD (from contact field) - with phone_limit support
             if ('lead' === $phoneSource && null !== $this->messageMapper) {
                 $phoneField = $phoneConfig['phone_field'] ?? 'mobile';
+                $cpfCnpjField = $phoneConfig['cpf_cnpj_field'] ?? '';
+                $contractField = $phoneConfig['contract_field'] ?? '';
                 $newQueuesCreatedLead = [];
+
+                // Fetch cpf_cnpj and contract values for all leads in batch (if fields configured)
+                $leadIds = array_map(fn($q) => $q->getLead()->getId(), $batch);
+                $leadIds = array_unique($leadIds);
+                $leadsExtraData = [];
+
+                if (!empty($cpfCnpjField) || !empty($contractField)) {
+                    $selectFields = 'id';
+                    if (!empty($cpfCnpjField)) {
+                        $selectFields .= ", {$cpfCnpjField} as cpf_cnpj_value";
+                    }
+                    if (!empty($contractField)) {
+                        $selectFields .= ", {$contractField} as contract_value";
+                    }
+                    $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
+                    $rows = $connection->fetchAllAssociative(
+                        "SELECT {$selectFields} FROM leads WHERE id IN ({$placeholders})",
+                        $leadIds
+                    );
+                    foreach ($rows as $row) {
+                        $leadsExtraData[$row['id']] = $row;
+                    }
+                }
 
                 // Process each queue item - get ALL phones and apply phone_limit
                 foreach ($batch as $queue) {
@@ -859,6 +885,15 @@ class LotManager
                         $payload['phone']    = $normalized['phone'];
                         $payload['_phone_source'] = 'lead';
                         $payload['_phone_field']  = $phoneField;
+
+                        // Add cpfCnpjReceiver and contract to payload (if fields configured)
+                        $leadExtraData = $leadsExtraData[$lead->getId()] ?? [];
+                        if (!empty($leadExtraData['cpf_cnpj_value'])) {
+                            $payload['cpfCnpjReceiver'] = preg_replace('/\D/', '', $leadExtraData['cpf_cnpj_value']);
+                        }
+                        if (!empty($leadExtraData['contract_value'])) {
+                            $payload['contract'] = $leadExtraData['contract_value'];
+                        }
 
                         // Traceability: selected phone for THIS message
                         $payload['_selected_phone'] = [

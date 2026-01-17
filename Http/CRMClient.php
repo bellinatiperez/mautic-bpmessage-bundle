@@ -55,17 +55,16 @@ class CRMClient
     }
 
     /**
-     * Fetch phones from CRM API based on CPF/CNPJ and optional contract.
+     * Fetch phones from CRM API based on CPF/CNPJ.
      *
      * POST /api/v1/busca-user-telefone
      *
-     * @param string $cpfCnpj  CPF or CNPJ (only digits)
-     * @param string $contrato Contract number (optional)
+     * @param string $cpfCnpj CPF or CNPJ (only digits)
      *
      * @return array ['success' => bool, 'phones' => array, 'error' => string|null]
      *               phones: [['numeroTelefone' => string, 'pontuacao' => int, 'crm' => string], ...]
      */
-    public function fetchPhones(string $cpfCnpj, string $contrato = ''): array
+    public function fetchPhones(string $cpfCnpj): array
     {
         if (empty($this->baseUrl)) {
             $this->logger->warning('CRMClient: Base URL not configured');
@@ -91,7 +90,7 @@ class CRMClient
 
         $payload = [
             'cpfCnpj'  => $cpfCnpj,
-            'contrato' => $contrato,
+            'contrato' => '',
         ];
 
         $this->logger->info('CRMClient: Fetching phones', [
@@ -192,7 +191,7 @@ class CRMClient
      * However, the current API doesn't support batch requests, so this method
      * makes individual requests for each CPF/CNPJ.
      *
-     * @param array $cpfCnpjList Array of ['cpfCnpj' => string, 'contrato' => string]
+     * @param array $cpfCnpjList Array of CPF/CNPJ strings
      *
      * @return array Map of cpfCnpj => ['success' => bool, 'phones' => array, 'error' => string|null]
      */
@@ -200,10 +199,7 @@ class CRMClient
     {
         $results = [];
 
-        foreach ($cpfCnpjList as $item) {
-            $cpfCnpj  = $item['cpfCnpj'] ?? '';
-            $contrato = $item['contrato'] ?? '';
-
+        foreach ($cpfCnpjList as $cpfCnpj) {
             if (empty($cpfCnpj)) {
                 $results[$cpfCnpj] = [
                     'success' => false,
@@ -213,7 +209,7 @@ class CRMClient
                 continue;
             }
 
-            $results[$cpfCnpj] = $this->fetchPhones($cpfCnpj, $contrato);
+            $results[$cpfCnpj] = $this->fetchPhones($cpfCnpj);
         }
 
         return $results;
