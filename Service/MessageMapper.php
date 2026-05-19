@@ -14,6 +14,8 @@ use Psr\Log\LoggerInterface;
  */
 class MessageMapper
 {
+    use ContactFieldValueNormalizerTrait;
+
     private LoggerInterface $logger;
 
     public function __construct(LoggerInterface $logger)
@@ -473,54 +475,33 @@ class MessageMapper
             'phone_type_filter' => $phoneTypeFilter,
         ]);
 
-        // Check if it's a JSON array (collection field)
-        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
-            $decoded = json_decode($fieldValue, true);
-            if (is_array($decoded) && !empty($decoded)) {
-                $phones = [];
-                foreach ($decoded as $phone) {
-                    if (!empty($phone)) {
-                        $normalized = $this->normalizePhone((string) $phone);
+        // Normalize the field value (decoded array, JSON string, or single scalar)
+        $phones = [];
+        foreach ($this->normalizeContactFieldValues($fieldValue) as $rawPhone) {
+            $normalized = $this->normalizePhone($rawPhone);
 
-                        // Apply phone type filter
-                        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
-                            $phones[] = $normalized;
-                        }
-                    }
-                }
-
-                // Apply phone limit if configured (only for collection fields)
-                if ($phoneLimit > 0 && count($phones) > $phoneLimit) {
-                    $this->logger->debug('BpMessage: Applying phone limit to collection', [
-                        'lead_id'        => $lead->getId(),
-                        'original_count' => count($phones),
-                        'limit'          => $phoneLimit,
-                    ]);
-                    $phones = array_slice($phones, 0, $phoneLimit);
-                }
-
-                $this->logger->debug('BpMessage: Extracted phones from collection', [
-                    'lead_id'     => $lead->getId(),
-                    'phone_count' => count($phones),
-                ]);
-
-                return $phones;
+            // Apply phone type filter
+            if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                $phones[] = $normalized;
             }
         }
 
-        // Single value - apply filter but phone_limit does not apply
-        $normalized = $this->normalizePhone((string) $fieldValue);
-        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
-            return [$normalized];
+        // Apply phone limit if configured (only relevant for collection fields)
+        if ($phoneLimit > 0 && count($phones) > $phoneLimit) {
+            $this->logger->debug('BpMessage: Applying phone limit to collection', [
+                'lead_id'        => $lead->getId(),
+                'original_count' => count($phones),
+                'limit'          => $phoneLimit,
+            ]);
+            $phones = array_slice($phones, 0, $phoneLimit);
         }
 
-        $this->logger->debug('BpMessage: Single phone filtered out by type filter', [
-            'lead_id'           => $lead->getId(),
-            'phone'             => $normalized['phone'] ?? '',
-            'phone_type_filter' => $phoneTypeFilter,
+        $this->logger->debug('BpMessage: Extracted phones from field', [
+            'lead_id'     => $lead->getId(),
+            'phone_count' => count($phones),
         ]);
 
-        return [];
+        return $phones;
     }
 
     /**
@@ -552,45 +533,28 @@ class MessageMapper
             'phone_type_filter' => $phoneTypeFilter,
         ]);
 
-        // Check if it's a JSON array (collection field)
-        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
-            $decoded = json_decode($fieldValue, true);
-            if (is_array($decoded) && !empty($decoded)) {
-                $phones = [];
-                foreach ($decoded as $phone) {
-                    if (!empty($phone)) {
-                        $normalized = $this->normalizePhone((string) $phone);
+        // Normalize the field value (decoded array, JSON string, or single scalar)
+        // NOTE: phone_limit is NOT applied here - it should be applied by the caller
+        $phones = [];
+        foreach ($this->normalizeContactFieldValues($fieldValue) as $rawPhone) {
+            $normalized = $this->normalizePhone($rawPhone);
 
-                        // Apply phone type filter
-                        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
-                            $phones[] = [
-                                'normalized' => $normalized,
-                                'original'   => (string) $phone,
-                            ];
-                        }
-                    }
-                }
-
-                // NOTE: phone_limit is NOT applied here - it should be applied by the caller
-
-                $this->logger->debug('BpMessage: Extracted ALL phones from collection (no limit)', [
-                    'lead_id'     => $lead->getId(),
-                    'phone_count' => count($phones),
-                ]);
-
-                return $phones;
+            // Apply phone type filter
+            if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                $phones[] = [
+                    'normalized' => $normalized,
+                    'original'   => $rawPhone,
+                ];
             }
         }
 
-        // Single value - apply filter but phone_limit does not apply
-        $normalized = $this->normalizePhone((string) $fieldValue);
-        if ($this->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
-            return [
-                [
-                    'normalized' => $normalized,
-                    'original'   => (string) $fieldValue,
-                ],
-            ];
+        if (!empty($phones)) {
+            $this->logger->debug('BpMessage: Extracted ALL phones from field (no limit)', [
+                'lead_id'     => $lead->getId(),
+                'phone_count' => count($phones),
+            ]);
+
+            return $phones;
         }
 
         return [];

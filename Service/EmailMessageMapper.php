@@ -15,6 +15,8 @@ use Psr\Log\LoggerInterface;
  */
 class EmailMessageMapper
 {
+    use ContactFieldValueNormalizerTrait;
+
     private LoggerInterface $logger;
 
     public function __construct(LoggerInterface $logger)
@@ -406,42 +408,30 @@ class EmailMessageMapper
             'email_limit' => $emailLimit,
         ]);
 
-        // Check if it's a JSON array (collection field)
-        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
-            $decoded = json_decode($fieldValue, true);
-            if (is_array($decoded) && !empty($decoded)) {
-                $emails = [];
-                foreach ($decoded as $email) {
-                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                        $emails[] = trim((string) $email);
-                    }
-                }
-
-                // Apply email limit if configured (only for collection fields)
-                if ($emailLimit > 0 && count($emails) > $emailLimit) {
-                    $this->logger->debug('BpMessage Email: Applying email limit to collection', [
-                        'lead_id'        => $lead->getId(),
-                        'original_count' => count($emails),
-                        'limit'          => $emailLimit,
-                    ]);
-                    $emails = array_slice($emails, 0, $emailLimit);
-                }
-
-                $this->logger->debug('BpMessage Email: Extracted emails from collection', [
-                    'lead_id'     => $lead->getId(),
-                    'email_count' => count($emails),
-                ]);
-
-                return $emails;
+        // Normalize the field value (decoded array, JSON string, or single scalar)
+        $emails = [];
+        foreach ($this->normalizeContactFieldValues($fieldValue) as $email) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $emails[] = $email;
             }
         }
 
-        // Single value - email_limit does not apply
-        if (filter_var($fieldValue, FILTER_VALIDATE_EMAIL)) {
-            return [trim((string) $fieldValue)];
+        // Apply email limit if configured (only relevant for collection fields)
+        if ($emailLimit > 0 && count($emails) > $emailLimit) {
+            $this->logger->debug('BpMessage Email: Applying email limit to collection', [
+                'lead_id'        => $lead->getId(),
+                'original_count' => count($emails),
+                'limit'          => $emailLimit,
+            ]);
+            $emails = array_slice($emails, 0, $emailLimit);
         }
 
-        return [];
+        $this->logger->debug('BpMessage Email: Extracted emails from field', [
+            'lead_id'     => $lead->getId(),
+            'email_count' => count($emails),
+        ]);
+
+        return $emails;
     }
 
     /**
