@@ -556,33 +556,17 @@ class EmailMessageMapper
             'field_value' => $fieldValue,
         ]);
 
-        // Check if it's a JSON array (collection field)
-        if (is_string($fieldValue) && str_starts_with(trim($fieldValue), '[')) {
-            $decoded = json_decode($fieldValue, true);
-            if (is_array($decoded) && !empty($decoded)) {
-                foreach ($decoded as $email) {
-                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                        $this->logger->debug('BpMessage Email: Email refreshed from DB (collection)', [
-                            'lead_id' => $leadId,
-                            'email'   => $email,
-                        ]);
+        // Normalize the value (decoded array, JSON string, or single scalar) and
+        // return the first address that validates (trimmed before validation).
+        foreach ($this->normalizeContactFieldValues($fieldValue) as $email) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $this->logger->debug('BpMessage Email: Email refreshed from DB', [
+                    'lead_id' => $leadId,
+                    'email'   => $email,
+                ]);
 
-                        return trim((string) $email);
-                    }
-                }
-
-                return null;
+                return $email;
             }
-        }
-
-        // Single value - validate email format
-        if (filter_var($fieldValue, FILTER_VALIDATE_EMAIL)) {
-            $this->logger->debug('BpMessage Email: Email refreshed from DB (single)', [
-                'lead_id' => $leadId,
-                'email'   => $fieldValue,
-            ]);
-
-            return trim((string) $fieldValue);
         }
 
         return null;
@@ -600,27 +584,13 @@ class EmailMessageMapper
      */
     public function parseEmailValue($emailValue): ?string
     {
-        if (empty($emailValue)) {
-            return null;
-        }
-
-        // Check if it's a JSON array (collection field)
-        if (is_string($emailValue) && str_starts_with(trim($emailValue), '[')) {
-            $decoded = json_decode($emailValue, true);
-            if (is_array($decoded) && !empty($decoded)) {
-                foreach ($decoded as $email) {
-                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                        return trim((string) $email);
-                    }
-                }
-
-                return null;
+        // Normalize the value (decoded array, JSON string, or single scalar) and
+        // return the first address that validates. Values are trimmed before
+        // validation so a single-value field with surrounding whitespace works.
+        foreach ($this->normalizeContactFieldValues($emailValue) as $email) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
             }
-        }
-
-        // Single value - validate email format
-        if (filter_var($emailValue, FILTER_VALIDATE_EMAIL)) {
-            return trim((string) $emailValue);
         }
 
         return null;
@@ -638,40 +608,20 @@ class EmailMessageMapper
      */
     public function parseAllEmailValues($emailValue): array
     {
+        // Normalize the value (decoded array, JSON string, or single scalar) and
+        // keep every address that validates. Values are trimmed before validation
+        // so single-value fields with surrounding whitespace are handled too.
         $emails = [];
-
-        if (empty($emailValue)) {
-            return [];
-        }
-
-        // Check if it's a JSON array (collection field)
-        if (is_string($emailValue) && str_starts_with(trim($emailValue), '[')) {
-            $decoded = json_decode($emailValue, true);
-            if (is_array($decoded) && !empty($decoded)) {
-                foreach ($decoded as $email) {
-                    if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                        $emails[] = [
-                            'email'    => trim((string) $email),
-                            'original' => $email,
-                        ];
-                    }
-                }
-
-                return $emails;
+        foreach ($this->normalizeContactFieldValues($emailValue) as $email) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $emails[] = [
+                    'email'    => $email,
+                    'original' => $email,
+                ];
             }
         }
 
-        // Single value - validate email format
-        if (filter_var($emailValue, FILTER_VALIDATE_EMAIL)) {
-            return [
-                [
-                    'email'    => trim((string) $emailValue),
-                    'original' => $emailValue,
-                ],
-            ];
-        }
-
-        return [];
+        return $emails;
     }
 
     /**
