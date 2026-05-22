@@ -7,6 +7,8 @@ use Mautic\CoreBundle\DependencyInjection\MauticCoreExtension;
 use Mautic\PluginBundle\Helper\IntegrationHelper;
 use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use MauticPlugin\MauticBpMessageBundle\Http\CRMClient;
+use MauticPlugin\MauticBpMessageBundle\Service\EmailLotManager;
+use MauticPlugin\MauticBpMessageBundle\Service\EmailMessageMapper;
 use MauticPlugin\MauticBpMessageBundle\Service\LotManager;
 use MauticPlugin\MauticBpMessageBundle\Service\MessageMapper;
 use MauticPlugin\MauticBpMessageBundle\Service\RoutesService;
@@ -48,5 +50,17 @@ return function (ContainerConfigurator $configurator): void {
             service(MessageMapper::class),
             service(CRMClient::class),
             service(IntegrationHelper::class),
+        ]);
+
+    // Register EmailLotManager explicitly to ensure the nullable EmailMessageMapper
+    // is injected. Without it, autowiring leaves the optional argument null and email
+    // dispatch falls back to the stored payload, ignoring the configured Email Field
+    // (collection) and sending an empty "to" (BpMessage: "'To' must not be empty.").
+    $services->set(EmailLotManager::class)
+        ->args([
+            service(EntityManager::class),
+            service(BpMessageClient::class),
+            service(LoggerInterface::class),
+            service(EmailMessageMapper::class),
         ]);
 };
