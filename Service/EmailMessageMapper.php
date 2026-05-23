@@ -72,6 +72,10 @@ class EmailMessageMapper
             $email = array_merge($email, $additionalData);
         }
 
+        // Receiver identifiers from dedicated fields (Campo de CPF/CNPJ / Campo de Contrato)
+        // take priority over the additional_data fallback above when configured.
+        $email = array_merge($email, $this->resolveReceiverIdentifiers($lead, $config));
+
         // Process email_variables
         $emailVariables = $this->processEmailVariables($lead, $config);
         if (!empty($emailVariables)) {
@@ -480,6 +484,10 @@ class EmailMessageMapper
         if (!empty($additionalData)) {
             $email = array_merge($email, $additionalData);
         }
+
+        // Receiver identifiers from dedicated fields (Campo de CPF/CNPJ / Campo de Contrato)
+        // take priority over the additional_data fallback above when configured.
+        $email = array_merge($email, $this->resolveReceiverIdentifiers($lead, $config));
 
         // Process email_variables
         $emailVariables = $this->processEmailVariables($lead, $config);

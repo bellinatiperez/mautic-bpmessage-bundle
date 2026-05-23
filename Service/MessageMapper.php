@@ -76,6 +76,10 @@ class MessageMapper
             $message = array_merge($message, $additionalData);
         }
 
+        // Receiver identifiers from dedicated fields (Campo de CPF/CNPJ / Campo de Contrato)
+        // take priority over the additional_data fallback above when configured.
+        $message = array_merge($message, $this->resolveReceiverIdentifiers($lead, $config));
+
         // Process message_variables and add to message
         $messageVariables = $this->processMessageVariables($lead, $config);
         if (!empty($messageVariables)) {

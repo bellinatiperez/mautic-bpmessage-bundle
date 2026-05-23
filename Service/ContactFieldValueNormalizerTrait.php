@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MauticPlugin\MauticBpMessageBundle\Service;
 
+use Mautic\LeadBundle\Entity\Lead;
+
 /**
  * Normalizes a Mautic contact custom-field value into a flat list of scalar values.
  *
@@ -55,5 +57,39 @@ trait ContactFieldValueNormalizerTrait
         }
 
         return $values;
+    }
+
+    /**
+     * Resolve the BpMessage receiver identifiers (cpfCnpjReceiver / contract) from the
+     * dedicated contact-field configuration.
+     *
+     * Primary source: the configured "Campo de CPF/CNPJ" (cpf_cnpj_field) and
+     * "Campo de Contrato" (contract_field), read from the contact. When a field is not
+     * configured or the contact has no value, the key is omitted so the caller keeps the
+     * "Dados Adicionais" (additional_data) fallback already present in the payload.
+     *
+     * Only non-empty values are returned, so it never blanks out an existing value.
+     *
+     * @return array{cpfCnpjReceiver?: string, contract?: string}
+     */
+    private function resolveReceiverIdentifiers(Lead $lead, array $config): array
+    {
+        $result = [];
+
+        if (!empty($config['cpf_cnpj_field'])) {
+            $cpf = preg_replace('/\D/', '', (string) $lead->getFieldValue($config['cpf_cnpj_field']));
+            if ('' !== (string) $cpf) {
+                $result['cpfCnpjReceiver'] = $cpf;
+            }
+        }
+
+        if (!empty($config['contract_field'])) {
+            $contract = trim((string) $lead->getFieldValue($config['contract_field']));
+            if ('' !== $contract) {
+                $result['contract'] = $contract;
+            }
+        }
+
+        return $result;
     }
 }
