@@ -88,40 +88,91 @@ class BpMessageModel
             // Get or create active lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Create a SINGLE placeholder entry per lead
-            // Phone extraction and phone_limit will be applied at dispatch time
-            // This allows:
-            // 1. Fetching phones from CRM API at dispatch time (not campaign trigger time)
-            // 2. Applying phone_limit to create N messages (one per phone) at dispatch time
+            // Build the base message payload.
             $messageData = $this->messageMapper->mapLeadToMessage($lead, $config, $campaign);
 
-            // Phone fields are intentionally empty - will be filled at dispatch time
-            // based on phone_source config (lead field or CRM API)
-            $messageData['areaCode'] = '';
-            $messageData['phone']    = '';
+            // PENDING preview parity: resolve the real recipients now (at trigger time)
+            // and queue one PENDING entry per phone, so the lot reflects what will be sent
+            // while pending. Dispatch (sendLotMessages) is idempotent and sends entries that
+            // already carry a phone as-is, without re-expanding.
+            // - phone_source = lead: read the configured phone field (valid phones with
+            //   >= 8 digits, capped at phone_limit).
+            // - phone_source = crm_api: call the CRM API now (same filtering/limit as
+            //   dispatch). On any failure/empty, fall back to a single placeholder and let
+            //   the dispatch-time CRM lookup resolve it.
+            $phoneSource   = $config['phone_source'] ?? 'lead';
+            $phonesToQueue = [];
 
-            // Queue placeholder message (PENDING status) - returns null if duplicate
-            $queue = $this->lotManager->queueMessage($lot, $lead, $messageData);
-
-            if (null === $queue) {
-                $this->logger->warning('BpMessage: Duplicate contact, skipped', [
-                    'lead_id'     => $lead->getId(),
-                    'lot_id'      => $lot->getId(),
-                    'campaign_id' => $campaign->getId(),
-                ]);
-
-                return [
-                    'success' => true,
-                    'message' => 'Contact already queued (duplicate)',
-                ];
+            if ('lead' === $phoneSource) {
+                $phoneLimit = (int) ($config['phone_limit'] ?? 0);
+                foreach ($this->messageMapper->extractAllPhonesFromField($lead, $config) as $phoneData) {
+                    $normalized = $phoneData['normalized'] ?? [];
+                    $digits     = ($normalized['areaCode'] ?? '').($normalized['phone'] ?? '');
+                    if (strlen($digits) >= 8) {
+                        $phonesToQueue[] = $normalized;
+                    }
+                }
+                if ($phoneLimit > 0 && count($phonesToQueue) > $phoneLimit) {
+                    $phonesToQueue = array_slice($phonesToQueue, 0, $phoneLimit);
+                }
+            } elseif ('crm_api' === $phoneSource) {
+                $phonesToQueue = $this->lotManager->resolveCrmApiPhones($lead, $config);
             }
 
-            $this->logger->info('BpMessage: Contact placeholder queued', [
+            if (empty($phonesToQueue)) {
+                // crm_api source, or no valid phone in field: single placeholder
+                // (areaCode/phone filled at dispatch time).
+                $messageData['areaCode'] = '';
+                $messageData['phone']    = '';
+                $queue = $this->lotManager->queueMessage($lot, $lead, $messageData);
+
+                if (null === $queue) {
+                    $this->logger->warning('BpMessage: Duplicate contact, skipped', [
+                        'lead_id'     => $lead->getId(),
+                        'lot_id'      => $lot->getId(),
+                        'campaign_id' => $campaign->getId(),
+                    ]);
+
+                    return [
+                        'success' => true,
+                        'message' => 'Contact already queued (duplicate)',
+                    ];
+                }
+            } else {
+                $queuedCount = 0;
+                foreach ($phonesToQueue as $normalized) {
+                    $perPhone             = $messageData;
+                    $perPhone['areaCode'] = $normalized['areaCode'] ?? '';
+                    $perPhone['phone']    = $normalized['phone'] ?? '';
+                    // crm_api phones carry the CPF/CNPJ used in the lookup
+                    if (!empty($normalized['cpfCnpj'])) {
+                        $perPhone['cpfCnpjReceiver'] = $normalized['cpfCnpj'];
+                    }
+                    if (null !== $this->lotManager->queueMessage($lot, $lead, $perPhone)) {
+                        ++$queuedCount;
+                    }
+                }
+
+                if (0 === $queuedCount) {
+                    $this->logger->warning('BpMessage: Duplicate contact, skipped', [
+                        'lead_id'     => $lead->getId(),
+                        'lot_id'      => $lot->getId(),
+                        'campaign_id' => $campaign->getId(),
+                    ]);
+
+                    return [
+                        'success' => true,
+                        'message' => 'Contact already queued (duplicate)',
+                    ];
+                }
+            }
+
+            $this->logger->info('BpMessage: Contact recipients queued', [
                 'lead_id'      => $lead->getId(),
                 'lot_id'       => $lot->getId(),
                 'campaign_id'  => $campaign->getId(),
-                'queue_id'     => $queue->getId(),
-                'phone_source' => $config['phone_source'] ?? 'lead',
+                'phone_source' => $phoneSource,
+                'phone_count'  => count($phonesToQueue),
             ]);
 
             return [

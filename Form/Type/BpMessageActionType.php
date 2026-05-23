@@ -259,6 +259,29 @@ class BpMessageActionType extends AbstractType
             }
         });
 
+        // Phone Source - where to fetch phone numbers from (placed above the phone field
+        // because the phone field is only used for the "lead" source; it is hidden by JS
+        // when "crm_api" is selected).
+        // Options: lead (from contact field), crm_api (from external CRM API)
+        $builder->add(
+            'phone_source',
+            ChoiceType::class,
+            [
+                'label'      => 'mautic.bpmessage.form.phone_source',
+                'label_attr' => ['class' => 'control-label'],
+                'choices'    => [
+                    'mautic.bpmessage.phone_source.lead'    => 'lead',
+                    'mautic.bpmessage.phone_source.crm_api' => 'crm_api',
+                ],
+                'attr' => [
+                    'class'   => 'form-control',
+                    'tooltip' => 'mautic.bpmessage.form.phone_source.tooltip',
+                ],
+                'required'   => false,
+                'empty_data' => 'lead',
+            ]
+        );
+
         // Phone Field - select contact field containing phone number(s)
         $builder->add(
             'phone_field',
@@ -312,27 +335,6 @@ class BpMessageActionType extends AbstractType
                 ],
                 'required'   => false,
                 'empty_data' => 'mobile',
-            ]
-        );
-
-        // Phone Source - where to fetch phone numbers from
-        // Options: lead (from contact field), crm_api (from external CRM API)
-        $builder->add(
-            'phone_source',
-            ChoiceType::class,
-            [
-                'label'      => 'mautic.bpmessage.form.phone_source',
-                'label_attr' => ['class' => 'control-label'],
-                'choices'    => [
-                    'mautic.bpmessage.phone_source.lead'    => 'lead',
-                    'mautic.bpmessage.phone_source.crm_api' => 'crm_api',
-                ],
-                'attr' => [
-                    'class'   => 'form-control',
-                    'tooltip' => 'mautic.bpmessage.form.phone_source.tooltip',
-                ],
-                'required'   => false,
-                'empty_data' => 'lead',
             ]
         );
 

@@ -103,6 +103,86 @@ class LotManager
     }
 
     /**
+     * Resolve phones from the CRM API for a single lead at queue-creation time.
+     *
+     * Mirrors the CRM-API filtering used at dispatch (valid numbers, phone type filter,
+     * >= 8 digits, capped at phone_limit) so the lot can reflect the real recipients
+     * while PENDING. Returns an empty array on any failure (no CRM client, missing
+     * cpf_cnpj_field, empty CPF, API error or no phones); the caller then keeps a single
+     * placeholder and the dispatch-time CRM lookup acts as the fallback.
+     *
+     * @return array<int, array{areaCode: string, phone: string, cpfCnpj: string}>
+     */
+    public function resolveCrmApiPhones(Lead $lead, array $config): array
+    {
+        if (null === $this->crmClient || null === $this->messageMapper) {
+            return [];
+        }
+
+        $cpfCnpjField = $config['cpf_cnpj_field'] ?? '';
+        if (empty($cpfCnpjField)) {
+            return [];
+        }
+
+        if (!$this->configureCrmClient()) {
+            return [];
+        }
+
+        $cpfCnpj = preg_replace('/\D/', '', (string) $lead->getFieldValue($cpfCnpjField));
+        if (empty($cpfCnpj)) {
+            return [];
+        }
+
+        try {
+            $result = $this->crmClient->fetchPhones($cpfCnpj);
+        } catch (\Throwable $e) {
+            $this->logger->warning('BpMessage: CRM API fetchPhones failed at queue time, will resolve at dispatch', [
+                'lead_id' => $lead->getId(),
+                'error'   => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        if (empty($result['success']) || empty($result['phones'])) {
+            return [];
+        }
+
+        $phoneTypeFilter = $config['phone_type_filter'] ?? 'all';
+        $phoneLimit      = (int) ($config['phone_limit'] ?? 0);
+
+        $valid = [];
+        foreach ($result['phones'] as $crmPhone) {
+            $phoneNumber = $crmPhone['numeroTelefone'] ?? '';
+            if (empty($phoneNumber)) {
+                continue;
+            }
+
+            $normalized = $this->messageMapper->normalizePhone($phoneNumber);
+
+            if (!$this->messageMapper->matchesPhoneTypeFilter($normalized, $phoneTypeFilter)) {
+                continue;
+            }
+
+            if (strlen($normalized['areaCode'].$normalized['phone']) < 8) {
+                continue;
+            }
+
+            $valid[] = [
+                'areaCode' => $normalized['areaCode'],
+                'phone'    => $normalized['phone'],
+                'cpfCnpj'  => $cpfCnpj,
+            ];
+        }
+
+        if ($phoneLimit > 0 && count($valid) > $phoneLimit) {
+            $valid = array_slice($valid, 0, $phoneLimit);
+        }
+
+        return $valid;
+    }
+
+    /**
      * Resolve idQuotaSettings from the config using GetRoutes API.
      *
      * @param array $config Action configuration containing id_service_settings, crm_id, book_business_foreign_id, service_type
@@ -554,28 +634,35 @@ class LotManager
                     // Fallback to lead source
                     $phoneSource = 'lead';
                 } else {
-                    // Build map of leadId -> queue and fetch CPF/CNPJ values
+                    // Only entries that still need a phone require a CRM lookup. Entries
+                    // already resolved at queue time (crm_api fetched at creation) are
+                    // sent as-is by the per-queue loop below, so we neither re-query nor
+                    // re-call the CRM API for them.
                     $leadIds = [];
                     foreach ($batch as $queue) {
-                        $leadIds[] = $queue->getLead()->getId();
+                        if (empty($queue->getPayloadArray()['phone'])) {
+                            $leadIds[] = $queue->getLead()->getId();
+                        }
                     }
                     $leadIds = array_unique($leadIds);
 
-                    // Fetch CPF/CNPJ and contract values in a single query
-                    $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
-                    $selectFields = "id, {$cpfCnpjField} as cpf_cnpj_value";
-                    if (!empty($contractField)) {
-                        $selectFields .= ", {$contractField} as contract_value";
-                    }
-                    $leadsData = $connection->fetchAllAssociative(
-                        "SELECT {$selectFields} FROM leads WHERE id IN ({$placeholders})",
-                        $leadIds
-                    );
-
-                    // Index lead data by ID
+                    // Fetch CPF/CNPJ and contract values in a single query (only for unresolved)
                     $leadsDataById = [];
-                    foreach ($leadsData as $row) {
-                        $leadsDataById[$row['id']] = $row;
+                    if (!empty($leadIds)) {
+                        $placeholders = implode(',', array_fill(0, count($leadIds), '?'));
+                        $selectFields = "id, {$cpfCnpjField} as cpf_cnpj_value";
+                        if (!empty($contractField)) {
+                            $selectFields .= ", {$contractField} as contract_value";
+                        }
+                        $leadsData = $connection->fetchAllAssociative(
+                            "SELECT {$selectFields} FROM leads WHERE id IN ({$placeholders})",
+                            $leadIds
+                        );
+
+                        // Index lead data by ID
+                        foreach ($leadsData as $row) {
+                            $leadsDataById[$row['id']] = $row;
+                        }
                     }
 
                     // Fetch phones from CRM API for each unique CPF/CNPJ
@@ -613,6 +700,18 @@ class LotManager
                     $newQueuesCreated = [];
 
                     foreach ($batch as $queue) {
+                        // Already resolved at queue time (crm_api fetched at creation):
+                        // send as-is and skip the CRM lookup/expansion (idempotent).
+                        $existingPayload = $queue->getPayloadArray();
+                        if (!empty($existingPayload['phone'])) {
+                            $existingPayload['_phone_source'] = 'crm_api';
+                            $messages[]                       = $existingPayload;
+                            $validQueues[]                    = $queue;
+                            $updatedPayloads[$queue->getId()] = $existingPayload;
+
+                            continue;
+                        }
+
                         $leadId   = $queue->getLead()->getId();
                         $leadData = $leadsDataById[$leadId] ?? null;
 
@@ -822,6 +921,30 @@ class LotManager
                 // Process each queue item - get ALL phones and apply phone_limit
                 foreach ($batch as $queue) {
                     $lead = $queue->getLead();
+
+                    // If the phone was already resolved when the lot was created
+                    // (queue-time expansion of the lead phone field), send it as-is and
+                    // do NOT expand again — keeps dispatch idempotent and the PENDING
+                    // preview consistent with what is sent. Only legacy placeholders with
+                    // an empty "phone" fall through to dispatch-time expansion.
+                    $existingPayload = $queue->getPayloadArray();
+                    if (!empty($existingPayload['phone'])) {
+                        $leadExtraData = $leadsExtraData[$lead->getId()] ?? [];
+                        if (!empty($leadExtraData['cpf_cnpj_value'])) {
+                            $existingPayload['cpfCnpjReceiver'] = preg_replace('/\D/', '', $leadExtraData['cpf_cnpj_value']);
+                        }
+                        if (!empty($leadExtraData['contract_value'])) {
+                            $existingPayload['contract'] = $leadExtraData['contract_value'];
+                        }
+                        $existingPayload['_phone_source'] = 'lead';
+                        $existingPayload['_phone_field']  = $phoneField;
+
+                        $messages[]                       = $existingPayload;
+                        $validQueues[]                    = $queue;
+                        $updatedPayloads[$queue->getId()] = $existingPayload;
+
+                        continue;
+                    }
 
                     // Get ALL phones from lead field (without limit applied)
                     $allPhones = $this->messageMapper->extractAllPhonesFromField($lead, $phoneConfig);

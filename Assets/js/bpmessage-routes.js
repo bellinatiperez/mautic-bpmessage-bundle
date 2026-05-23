@@ -273,9 +273,42 @@
     }
 
     /**
+     * Toggle "phone_field" visibility based on "phone_source".
+     * When the source is the CRM API the contact phone field is not used, so its
+     * form row is hidden to avoid confusion. Defensive: no-op if not present.
+     */
+    function setupPhoneSourceToggle() {
+        var phoneSource = findFieldByName('phone_source');
+        var phoneField = findFieldByName('phone_field');
+        if (!phoneSource || !phoneField) {
+            return;
+        }
+
+        var row = phoneField.closest('.form-group') || phoneField.parentNode;
+        if (!row) {
+            return;
+        }
+
+        var apply = function () {
+            row.style.display = (String(phoneSource.value) === 'crm_api') ? 'none' : '';
+        };
+
+        apply();
+
+        phoneSource.addEventListener('change', apply);
+
+        // Chosen.js fires the jQuery change event, not the native one
+        if (typeof jQuery !== 'undefined') {
+            jQuery(phoneSource).off('change.bpmessageToggle').on('change.bpmessageToggle', apply);
+        }
+    }
+
+    /**
      * Initialize the routes functionality
      */
     function initRoutes() {
+        setupPhoneSourceToggle();
+
         var routeSelect = findRouteSelect();
         var triggerFields = findTriggerFields();
 
