@@ -437,6 +437,30 @@ class EmailLotManager
                 foreach ($batch as $queue) {
                     $leadId   = $queue->getLead()->getId();
                     $leadData = $leadsDataById[$leadId] ?? [];
+
+                    // If the recipient was already resolved when the lot was created
+                    // (queue-time expansion of the Email Field), send it as-is and do
+                    // NOT expand again. This keeps dispatch idempotent and the PENDING
+                    // preview consistent with what is sent. Only legacy placeholders
+                    // with an empty "to" fall through to the dispatch-time expansion.
+                    $existingPayload = $queue->getPayloadArray();
+                    if (!empty($existingPayload['to'])) {
+                        if (!empty($cpfCnpjField) && !empty($leadData['cpf_cnpj_value'])) {
+                            $existingPayload['cpfCnpjReceiver'] = preg_replace('/\D/', '', $leadData['cpf_cnpj_value']);
+                        }
+                        if (!empty($contractField) && !empty($leadData['contract_value'])) {
+                            $existingPayload['contract'] = $leadData['contract_value'];
+                        }
+                        $existingPayload['_email_source'] = 'lead';
+                        $existingPayload['_email_field']  = $emailField;
+
+                        $emails[]                         = $existingPayload;
+                        $validQueues[]                    = $queue;
+                        $updatedPayloads[$queue->getId()] = $existingPayload;
+
+                        continue;
+                    }
+
                     $emailValue = $leadData['email_value'] ?? null;
 
                     // Parse ALL emails from field (not just first)

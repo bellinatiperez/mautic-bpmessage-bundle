@@ -74,20 +74,31 @@ class BpMessageEmailModel
             // Get or create active email lot
             $lot = $this->lotManager->getOrCreateActiveLot($campaign, $config);
 
-            // Create ONE placeholder per lead (email will be resolved at dispatch time)
-            // This follows the same pattern as LotManager for SMS/WhatsApp
-            // The actual emails are fetched and expanded in sendLotEmails()
-            $emailData = $this->messageMapper->mapLeadToEmailWithAddress($lead, '', $config, $campaign, $lot);
+            // Resolve the recipients from the configured Email Field now (respecting
+            // email_limit) so the lot reflects the real recipients while PENDING:
+            // one queue entry per email, capped at email_limit. Dispatch (sendLotEmails)
+            // is idempotent and sends entries that already have a "to" as-is, without
+            // re-expanding. When the contact has no email in the configured field, keep
+            // the previous behavior: a single placeholder, marked failed at dispatch.
+            $emails = array_values(array_unique($this->messageMapper->extractEmailsFromField($lead, $config)));
 
-            // Queue placeholder (PENDING status)
-            $this->lotManager->queueEmail($lot, $lead, $emailData);
+            if (empty($emails)) {
+                $emailData = $this->messageMapper->mapLeadToEmailWithAddress($lead, '', $config, $campaign, $lot);
+                $this->lotManager->queueEmail($lot, $lead, $emailData);
+            } else {
+                foreach ($emails as $emailAddress) {
+                    $emailData = $this->messageMapper->mapLeadToEmailWithAddress($lead, $emailAddress, $config, $campaign, $lot);
+                    $this->lotManager->queueEmail($lot, $lead, $emailData);
+                }
+            }
 
-            $this->logger->info('BpMessage Email: Placeholder queued for lead', [
+            $this->logger->info('BpMessage Email: Recipients queued for lead', [
                 'lead_id'     => $lead->getId(),
                 'lot_id'      => $lot->getId(),
                 'campaign_id' => $campaign->getId(),
                 'email_field' => $config['email_field'] ?? 'email',
                 'email_limit' => $config['email_limit'] ?? 0,
+                'email_count' => count($emails),
             ]);
 
             return [
