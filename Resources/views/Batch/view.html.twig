@@ -228,10 +228,12 @@
                                     </td>
                                     <td>
                                         {% if lot.isEmailLot %}
+                                            {# Show the actual recipient (payload "to"); if empty, show nothing instead of the
+                                               contact's default email, so the row honestly reflects what will be sent. #}
                                             {% if payload.to is defined and payload.to %}
                                                 {{ payload.to }}
                                             {% else %}
-                                                {{ lead.email }}
+                                                <span class="text-muted">-</span>
                                             {% endif %}
                                         {% else %}
                                             {% if payload.areaCode is defined and payload.areaCode and payload.phone is defined and payload.phone %}
