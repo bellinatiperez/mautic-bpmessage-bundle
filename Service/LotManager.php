@@ -591,6 +591,33 @@ class LotManager
         // Get database connection once for all batches
         $connection = $this->entityManager->getConnection();
 
+        // Elegibilidade: validação de obrigatórios + dedup de CONTATO duplicado no lote.
+        $eligibilityChecker = new RecordEligibilityChecker();
+
+        // Set lote-wide de contatos (CPF/CNPJ+Contrato) já comprometidos, para
+        // colapsar leads duplicados do mesmo contrato. Semeia com itens já SENT/SENDING
+        // (idempotência em reprocesso): seus payloads carregam cpfCnpjReceiver + contract.
+        $seenContactKeys = [];
+        try {
+            $seedRows = $connection->fetchAllAssociative(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.cpfCnpjReceiver')) AS cpf, "
+                ."JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.contract')) AS contract "
+                .'FROM bpmessage_queue WHERE lot_id = ? AND status IN (?, ?)',
+                [$lot->getId(), 'SENT', 'SENDING']
+            );
+            foreach ($seedRows as $seedRow) {
+                // Dedup é por CONTRATO (unidade da duplicação); só semeia quando há contrato.
+                if ('' !== trim((string) ($seedRow['contract'] ?? ''))) {
+                    $seenContactKeys[$eligibilityChecker->contactKey($seedRow['cpf'] ?? null, $seedRow['contract'] ?? null)] = true;
+                }
+            }
+        } catch (\Throwable $seedError) {
+            $this->logger->warning('BpMessage: falha ao semear dedup de contato (seguindo sem seed)', [
+                'lot_id' => $lot->getId(),
+                'error'  => $seedError->getMessage(),
+            ]);
+        }
+
         foreach ($batches as $batchIndex => $batch) {
             $this->logger->info('BpMessage: Sending batch', [
                 'lot_id'      => $lot->getId(),
@@ -617,6 +644,72 @@ class LotManager
                     $phoneSource = 'lead';
                 }
             }
+
+            // === Pré-passo de elegibilidade (antes de montar/enviar) ===
+            // 1) Campos obrigatórios: só envia se CPF/CNPJ e Contrato (quando mapeados) estiverem preenchidos.
+            // 2) Dedup de CONTATO duplicado: o mesmo contrato/CPF em leads diferentes gera UM envio.
+            // Registros barrados NÃO entram no batch (evita 1 registro inválido derrubar o lote inteiro).
+            $cpfCnpjFieldCfg  = $phoneConfig['cpf_cnpj_field'] ?? '';
+            $contractFieldCfg = $phoneConfig['contract_field'] ?? '';
+            $identityByLeadId = [];
+            if ('' !== $cpfCnpjFieldCfg || '' !== $contractFieldCfg) {
+                $eligibilityLeadIds = array_values(array_unique(array_map(
+                    static fn ($q) => $q->getLead()->getId(),
+                    $batch
+                )));
+                if (!empty($eligibilityLeadIds)) {
+                    $sel = 'id';
+                    if ('' !== $cpfCnpjFieldCfg) {
+                        $sel .= ", {$cpfCnpjFieldCfg} AS cpf_cnpj_value";
+                    }
+                    if ('' !== $contractFieldCfg) {
+                        $sel .= ", {$contractFieldCfg} AS contract_value";
+                    }
+                    $ph = implode(',', array_fill(0, count($eligibilityLeadIds), '?'));
+                    foreach ($connection->fetchAllAssociative("SELECT {$sel} FROM leads WHERE id IN ({$ph})", $eligibilityLeadIds) as $idRow) {
+                        $identityByLeadId[$idRow['id']] = $idRow;
+                    }
+                }
+            }
+
+            $eligibleBatch = [];
+            foreach ($batch as $eligQueue) {
+                $idData      = $identityByLeadId[$eligQueue->getLead()->getId()] ?? [];
+                $cpfValue    = $idData['cpf_cnpj_value'] ?? null;
+                $contractVal = $idData['contract_value'] ?? null;
+
+                // Obrigatórios (somente para campos mapeados)
+                $eligibilityError = null;
+                if ('' !== $cpfCnpjFieldCfg && '' === preg_replace('/\D/', '', (string) $cpfValue)) {
+                    $eligibilityError = RecordEligibilityChecker::REASON_CPF;
+                } elseif ('' !== $contractFieldCfg && '' === trim((string) $contractVal)) {
+                    $eligibilityError = RecordEligibilityChecker::REASON_CONTRACT;
+                }
+                if (null !== $eligibilityError) {
+                    $failedQueues[] = ['queue' => $eligQueue, 'error' => $eligibilityError];
+                    continue;
+                }
+
+                // Dedup de contato duplicado no lote — somente quando há CONTRATO presente.
+                // A unidade da duplicação é o contrato; isto evita colapsar um CPF/CNPJ
+                // que possui múltiplos contratos quando o contrato não está mapeado/presente.
+                if ('' !== trim((string) $contractVal)) {
+                    $contactKey = $eligibilityChecker->contactKey($cpfValue, $contractVal);
+                    if (isset($seenContactKeys[$contactKey])) {
+                        $failedQueues[] = ['queue' => $eligQueue, 'error' => RecordEligibilityChecker::REASON_DUPLICATE];
+                        $this->logger->info('BpMessage: registro descartado por contato/contrato duplicado no lote', [
+                            'lot_id'   => $lot->getId(),
+                            'lead_id'  => $eligQueue->getLead()->getId(),
+                            'contract' => substr((string) $contractVal, 0, 4).'***',
+                        ]);
+                        continue;
+                    }
+                    $seenContactKeys[$contactKey] = true;
+                }
+
+                $eligibleBatch[] = $eligQueue;
+            }
+            $batch = $eligibleBatch;
 
             if ('crm_api' === $phoneSource && $crmApiConfigured) {
                 // PHONE SOURCE: CRM API
@@ -893,6 +986,7 @@ class LotManager
                 $phoneField = $phoneConfig['phone_field'] ?? 'mobile';
                 $cpfCnpjField = $phoneConfig['cpf_cnpj_field'] ?? '';
                 $contractField = $phoneConfig['contract_field'] ?? '';
+                $phoneLimit    = (int) ($phoneConfig['phone_limit'] ?? 0); // antes indefinido neste escopo (usado adiante)
                 $newQueuesCreatedLead = [];
 
                 // Fetch cpf_cnpj and contract values for all leads in batch (if fields configured)
@@ -1159,44 +1253,52 @@ class LotManager
             } else {
                 $success = false;
 
-                // Save error message to lot for user visibility
+                // Rejeição do batch pela API: NÃO derrubar os registros válidos.
+                // Registra o erro no LOTE (visibilidade), mas mantém os itens válidos PENDING
+                // para reprocesso — evita que a rejeição atômica do batch marque registros
+                // válidos como FAILED com um erro genérico que não é deles.
                 $errorMessage = $result['error'];
                 $lot->setErrorMessage($errorMessage);
                 $lot->setStatus('FAILED');
-
-                // Mark messages as failed using bulk update for reliability
-                $queueIds = array_map(function (BpMessageQueue $queue) {
-                    return $queue->getId();
-                }, $validQueues);
 
                 $this->entityManager->flush();
 
                 // Force update with SQL to ensure persistence (EntityManager flush may not work in all scenarios)
                 $connection = $this->entityManager->getConnection();
 
-                // Update lot status and error message
+                // Update lot status and error message (apenas o lote; os itens válidos seguem PENDING)
                 $connection->executeStatement(
                     'UPDATE bpmessage_lot SET status = ?, error_message = ? WHERE id = ?',
                     ['FAILED', $errorMessage, $lot->getId()]
                 );
 
-                // Update queue items status and error message
-                if (!empty($queueIds)) {
-                    $placeholders = implode(',', array_fill(0, count($queueIds), '?'));
-                    $params       = array_merge(['FAILED', $result['error']], $queueIds);
+                // Mitigação: incrementa retry_count dos válidos (sem marcá-los FAILED) e, após
+                // um teto de tentativas, marca FAILED — evita reprocesso infinito de um batch
+                // que falha sempre, sem derrubar os válidos na primeira falha.
+                $validQueueIds = array_map(static fn (BpMessageQueue $q) => $q->getId(), $validQueues);
+                if (!empty($validQueueIds)) {
+                    $maxRetries     = 5;
+                    $idPlaceholders = implode(',', array_fill(0, count($validQueueIds), '?'));
+
                     $connection->executeStatement(
-                        "UPDATE bpmessage_queue SET status = ?, error_message = ?, retry_count = retry_count + 1 WHERE id IN ({$placeholders})",
-                        $params
+                        "UPDATE bpmessage_queue SET retry_count = retry_count + 1 WHERE id IN ({$idPlaceholders})",
+                        $validQueueIds
+                    );
+
+                    $connection->executeStatement(
+                        "UPDATE bpmessage_queue SET status = ?, error_message = ? WHERE id IN ({$idPlaceholders}) AND retry_count >= ?",
+                        array_merge(['FAILED', $errorMessage], $validQueueIds, [$maxRetries])
                     );
                 }
 
-                $this->logger->error('BpMessage: Batch failed', [
-                    'lot_id'      => $lot->getId(),
-                    'batch_index' => $batchIndex,
-                    'error'       => $result['error'],
+                $this->logger->error('BpMessage: Batch rejeitado pela API — itens válidos mantidos PENDING para reprocesso (erro não propagado a todos)', [
+                    'lot_id'        => $lot->getId(),
+                    'batch_index'   => $batchIndex,
+                    'valid_pending' => count($validQueues),
+                    'error'         => $result['error'],
                 ]);
 
-                break; // Stop processing on first failure
+                break; // Para este run; itens válidos seguem PENDING para retry
             }
         }
 

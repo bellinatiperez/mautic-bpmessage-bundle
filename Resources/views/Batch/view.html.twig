@@ -207,6 +207,7 @@
                                 {% else %}
                                     <th>{{ 'mautic.bpmessage.phone'|trans }}</th>
                                 {% endif %}
+                                <th>{{ 'mautic.bpmessage.contract'|trans }}</th>
                                 <th>{{ 'mautic.core.status'|trans }}</th>
                                 <th>{{ 'mautic.bpmessage.error_message'|trans }}</th>
                                 <th>{{ 'mautic.bpmessage.retry_count'|trans }}</th>
@@ -243,6 +244,13 @@
                                             {% else %}
                                                 <span class="text-muted">-</span>
                                             {% endif %}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if payload.contract is defined and payload.contract %}
+                                            <code>{{ payload.contract }}</code>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
                                         {% endif %}
                                     </td>
                                     <td>
