@@ -44,104 +44,103 @@ final class RecordEligibilityCheckerTest extends TestCase
         self::assertSame(RecordEligibilityChecker::REASON_CPF, $this->checker->validateRequiredFields('', ''));
     }
 
-    // ---------- Identidade do contato ----------
+    // ---------- Entregável canônico do payload ----------
 
-    public function testHasContactIdentity(): void
+    public function testDeliverablePreferiEmailQuandoPresente(): void
     {
-        self::assertFalse($this->checker->hasContactIdentity('', ''));
-        self::assertFalse($this->checker->hasContactIdentity(null, '   '));
-        self::assertTrue($this->checker->hasContactIdentity('12345678900', null));
-        self::assertTrue($this->checker->hasContactIdentity(null, '59671548000'));
+        self::assertSame('e:joao@exemplo.com', $this->checker->deliverableFromPayload(['to' => '  JOAO@Exemplo.com ']));
     }
 
-    public function testContactKeyMesmoContratoMesmaChave(): void
+    public function testDeliverableTelefoneSoDigitosDeAreaCodeEPhone(): void
     {
-        $a = $this->checker->contactKey('59671548000106', '59671548000');
-        $b = $this->checker->contactKey('59671548000106', '59671548000');
-        self::assertSame($a, $b);
+        self::assertSame('p:11947430156', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '94743-0156']));
     }
 
-    public function testContactKeyIgnoraFormatacaoDoCpf(): void
+    public function testDeliverableVazioQuandoSemEntregavel(): void
     {
-        // Mesmo CPF/CNPJ com pontuação diferente → mesma chave.
-        $a = $this->checker->contactKey('59.671.548/0001-06', '59671548000');
-        $b = $this->checker->contactKey('59671548000106', '59671548000');
-        self::assertSame($a, $b);
+        self::assertSame('', $this->checker->deliverableFromPayload([]));
+        self::assertSame('', $this->checker->deliverableFromPayload(['areaCode' => '', 'phone' => '']));
     }
 
-    public function testContratosDiferentesGeramChavesDiferentes(): void
+    // ---------- Dedup de ENTREGA: contrato + telefone/e-mail ----------
+
+    public function testDedupKeyNullSemContratoOuSemEntregavel(): void
     {
-        $a = $this->checker->contactKey('59671548000106', '59671548000');
-        $b = $this->checker->contactKey('45323997000159', '45323997000');
-        self::assertNotSame($a, $b);
+        self::assertNull($this->checker->dedupKey('', 'p:11999999999'));   // sem contrato → não deduplica
+        self::assertNull($this->checker->dedupKey(null, 'p:11999999999'));
+        self::assertNull($this->checker->dedupKey('59671548000', ''));     // sem entregável → não deduplica
     }
 
-    // ---------- Dedup de CONTATO duplicado no lote (Problema 2) ----------
+    public function testMesmoContratoMesmoTelefoneMesmaChave(): void
+    {
+        $a = $this->checker->dedupKey('37186775000', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '947430156']));
+        $b = $this->checker->dedupKey('37186775000', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '94743-0156']));
+        self::assertNotNull($a);
+        self::assertSame($a, $b, 'Mesmo contrato + mesmo telefone (formatação irrelevante) = mesma chave');
+    }
+
+    public function testMesmoContratoTelefonesDiferentesChavesDiferentes(): void
+    {
+        // NÚCLEO da correção do lote #1474: telefones DIFERENTES do MESMO contrato
+        // são entregas distintas e NÃO podem colapsar.
+        $a = $this->checker->dedupKey('02936673000', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '947430156']));
+        $b = $this->checker->dedupKey('02936673000', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '947428906']));
+        self::assertNotSame($a, $b, 'Telefones diferentes do mesmo contrato devem gerar chaves diferentes (ambos enviam)');
+    }
+
+    public function testContratosDiferentesMesmoTelefoneChavesDiferentes(): void
+    {
+        $a = $this->checker->dedupKey('11111111111', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '999999999']));
+        $b = $this->checker->dedupKey('22222222222', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '999999999']));
+        self::assertNotSame($a, $b, 'Contratos diferentes que compartilham telefone recebem cada um');
+    }
 
     /**
-     * Reproduz o caso do lote #1441: o MESMO contrato/CPF aparece em 2 leads
-     * diferentes (contato duplicado). Resultado esperado: 1 envio (o 2º colapsa).
+     * Reproduz o lote #1474: contrato com 3 entregas — 2 telefones iguais
+     * (devem colapsar p/ 1) + 1 telefone distinto (deve seguir). Resultado: 2 envios.
      */
-    public function testMesmoContratoEmDoisLeadsColapsaParaUmEnvio(): void
+    public function testLote1474MesmoContratoColapsaSoTelefoneIdentico(): void
     {
-        // lead 52345 e lead 52346 → mesmo contrato 37186775000 / CPF 37186775000103
         $registros = [
-            ['lead_id' => 52345, 'cpf' => '37186775000103', 'contract' => '37186775000'],
-            ['lead_id' => 52346, 'cpf' => '37186775000103', 'contract' => '37186775000'],
+            ['contract' => '02936673000', 'areaCode' => '11', 'phone' => '947430156'], // A
+            ['contract' => '02936673000', 'areaCode' => '11', 'phone' => '947428906'], // B (distinto)
+            ['contract' => '02936673000', 'areaCode' => '11', 'phone' => '947430156'], // A' (duplicado de A)
         ];
 
         $seen      = [];
         $enviados  = [];
         $colapsados = [];
-
-        foreach ($registros as $r) {
-            $key = $this->checker->contactKey($r['cpf'], $r['contract']);
-            if (isset($seen[$key])) {
-                $colapsados[] = $r['lead_id'];
+        foreach ($registros as $i => $r) {
+            $key = $this->checker->dedupKey($r['contract'], $this->checker->deliverableFromPayload($r));
+            if (null !== $key && isset($seen[$key])) {
+                $colapsados[] = $i;
                 continue;
             }
-            $seen[$key]  = true;
-            $enviados[]  = $r['lead_id'];
-        }
-
-        self::assertSame([52345], $enviados, 'Apenas o primeiro lead do contrato deve ser enviado');
-        self::assertSame([52346], $colapsados, 'O lead duplicado deve ser colapsado/descartado');
-    }
-
-    public function testContratosDistintosNaoSaoColapsados(): void
-    {
-        // Dois contratos diferentes que por acaso compartilham um telefone NÃO devem
-        // ser colapsados entre si (dedup é por contato/contrato, não por telefone).
-        $registros = [
-            ['cpf' => '37186775000103', 'contract' => '37186775000'],
-            ['cpf' => '45323997000159', 'contract' => '45323997000'],
-        ];
-
-        $seen     = [];
-        $enviados = 0;
-        foreach ($registros as $r) {
-            $key = $this->checker->contactKey($r['cpf'], $r['contract']);
-            if (isset($seen[$key])) {
-                continue;
+            if (null !== $key) {
+                $seen[$key] = true;
             }
-            $seen[$key] = true;
-            ++$enviados;
+            $enviados[] = $i;
         }
 
-        self::assertSame(2, $enviados, 'Contratos distintos recebem cada um');
+        self::assertSame([0, 1], $enviados, 'Telefone distinto (B) deve ser enviado junto com A; só o 3º (igual a A) colapsa');
+        self::assertSame([2], $colapsados, 'Apenas a entrega idêntica (mesmo contrato + mesmo telefone) é colapsada');
     }
 
-    /**
-     * Cobre o seed (itens já SENT/SENDING no lote): um contato já comprometido
-     * não é reenviado quando seu duplicado aparece.
-     */
-    public function testContatoJaEnviadoNoLoteNaoEReenviado(): void
+    public function testEntregaJaEnviadaNoLoteReconhecidaPeloSeed(): void
     {
         $seen = [];
-        // Seed: contato já SENT
-        $seen[$this->checker->contactKey('37186775000103', '37186775000')] = true;
+        // Seed: entrega já SENT (contrato + telefone)
+        $seedKey = $this->checker->dedupKey('37186775000', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '947430156']));
+        $seen[$seedKey] = true;
 
-        $novoDuplicado = $this->checker->contactKey('371.867.750.001-03', '37186775000');
-        self::assertArrayHasKey($novoDuplicado, $seen, 'Duplicado do contato já enviado deve ser reconhecido pelo seed');
+        $novoDuplicado = $this->checker->dedupKey('37186775000', $this->checker->deliverableFromPayload(['areaCode' => '11', 'phone' => '94743-0156']));
+        self::assertArrayHasKey($novoDuplicado, $seen, 'Duplicado exato (mesmo contrato+telefone) já enviado deve ser reconhecido pelo seed');
+    }
+
+    public function testEmailMesmoContratoEmailsDiferentesNaoColapsam(): void
+    {
+        $a = $this->checker->dedupKey('99999999000', $this->checker->deliverableFromPayload(['to' => 'a@x.com']));
+        $b = $this->checker->dedupKey('99999999000', $this->checker->deliverableFromPayload(['to' => 'b@x.com']));
+        self::assertNotSame($a, $b, 'E-mails diferentes do mesmo contrato são entregas distintas');
     }
 }

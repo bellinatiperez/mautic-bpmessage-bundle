@@ -594,25 +594,35 @@ class LotManager
         // Elegibilidade: validação de obrigatórios + dedup de CONTATO duplicado no lote.
         $eligibilityChecker = new RecordEligibilityChecker();
 
-        // Set lote-wide de contatos (CPF/CNPJ+Contrato) já comprometidos, para
-        // colapsar leads duplicados do mesmo contrato. Semeia com itens já SENT/SENDING
-        // (idempotência em reprocesso): seus payloads carregam cpfCnpjReceiver + contract.
-        $seenContactKeys = [];
+        // Set lote-wide de ENTREGAS já comprometidas (contrato + telefone/e-mail),
+        // para colapsar SOMENTE entregas idênticas (mesmo contrato + mesmo
+        // telefone/e-mail). Semeia com itens já SENT/SENDING (idempotência em
+        // reprocesso): seus payloads carregam contract + areaCode/phone (ou "to").
+        $seenDeliveryKeys = [];
         try {
             $seedRows = $connection->fetchAllAssociative(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.cpfCnpjReceiver')) AS cpf, "
-                ."JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.contract')) AS contract "
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.contract')) AS contract, "
+                ."JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.to')) AS email_to, "
+                ."JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.areaCode')) AS area_code, "
+                ."JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.phone')) AS phone "
                 .'FROM bpmessage_queue WHERE lot_id = ? AND status IN (?, ?)',
                 [$lot->getId(), 'SENT', 'SENDING']
             );
             foreach ($seedRows as $seedRow) {
-                // Dedup é por CONTRATO (unidade da duplicação); só semeia quando há contrato.
-                if ('' !== trim((string) ($seedRow['contract'] ?? ''))) {
-                    $seenContactKeys[$eligibilityChecker->contactKey($seedRow['cpf'] ?? null, $seedRow['contract'] ?? null)] = true;
+                $seedKey = $eligibilityChecker->dedupKey(
+                    $seedRow['contract'] ?? null,
+                    $eligibilityChecker->deliverableFromPayload([
+                        'to'       => $seedRow['email_to'] ?? null,
+                        'areaCode' => $seedRow['area_code'] ?? null,
+                        'phone'    => $seedRow['phone'] ?? null,
+                    ])
+                );
+                if (null !== $seedKey) {
+                    $seenDeliveryKeys[$seedKey] = true;
                 }
             }
         } catch (\Throwable $seedError) {
-            $this->logger->warning('BpMessage: falha ao semear dedup de contato (seguindo sem seed)', [
+            $this->logger->warning('BpMessage: falha ao semear dedup de entrega (seguindo sem seed)', [
                 'lot_id' => $lot->getId(),
                 'error'  => $seedError->getMessage(),
             ]);
@@ -647,7 +657,9 @@ class LotManager
 
             // === Pré-passo de elegibilidade (antes de montar/enviar) ===
             // 1) Campos obrigatórios: só envia se CPF/CNPJ e Contrato (quando mapeados) estiverem preenchidos.
-            // 2) Dedup de CONTATO duplicado: o mesmo contrato/CPF em leads diferentes gera UM envio.
+            // 2) Dedup de ENTREGA duplicada: colapsa SOMENTE quando o mesmo contrato tem o
+            //    mesmo telefone/e-mail. Telefones diferentes do mesmo contrato são entregas
+            //    distintas e seguem (não são colapsados).
             // Registros barrados NÃO entram no batch (evita 1 registro inválido derrubar o lote inteiro).
             $cpfCnpjFieldCfg  = $phoneConfig['cpf_cnpj_field'] ?? '';
             $contractFieldCfg = $phoneConfig['contract_field'] ?? '';
@@ -690,21 +702,25 @@ class LotManager
                     continue;
                 }
 
-                // Dedup de contato duplicado no lote — somente quando há CONTRATO presente.
-                // A unidade da duplicação é o contrato; isto evita colapsar um CPF/CNPJ
-                // que possui múltiplos contratos quando o contrato não está mapeado/presente.
-                if ('' !== trim((string) $contractVal)) {
-                    $contactKey = $eligibilityChecker->contactKey($cpfValue, $contractVal);
-                    if (isset($seenContactKeys[$contactKey])) {
+                // Dedup de ENTREGA duplicada no lote — colapsa SOMENTE quando o
+                // MESMO contrato tem o MESMO entregável (telefone/e-mail idêntico).
+                // Telefones DIFERENTES do mesmo contrato são entregas distintas e
+                // seguem normalmente. Quando o entregável ainda não está resolvido
+                // (sem telefone no payload), dedupKey() retorna null e NÃO se
+                // deduplica — evita derrubar entregas legítimas.
+                $deliverable = $eligibilityChecker->deliverableFromPayload($eligQueue->getPayloadArray());
+                $dedupKey    = $eligibilityChecker->dedupKey($contractVal, $deliverable);
+                if (null !== $dedupKey) {
+                    if (isset($seenDeliveryKeys[$dedupKey])) {
                         $failedQueues[] = ['queue' => $eligQueue, 'error' => RecordEligibilityChecker::REASON_DUPLICATE];
-                        $this->logger->info('BpMessage: registro descartado por contato/contrato duplicado no lote', [
+                        $this->logger->info('BpMessage: registro descartado por ENTREGA duplicada no lote (mesmo contrato + telefone/e-mail)', [
                             'lot_id'   => $lot->getId(),
                             'lead_id'  => $eligQueue->getLead()->getId(),
                             'contract' => substr((string) $contractVal, 0, 4).'***',
                         ]);
                         continue;
                     }
-                    $seenContactKeys[$contactKey] = true;
+                    $seenDeliveryKeys[$dedupKey] = true;
                 }
 
                 $eligibleBatch[] = $eligQueue;
