@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use Doctrine\ORM\EntityManager;
+use Mautic\CampaignBundle\Executioner\Scheduler\Mode\Interval;
 use Mautic\CoreBundle\DependencyInjection\MauticCoreExtension;
 use Mautic\PluginBundle\Helper\IntegrationHelper;
 use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use MauticPlugin\MauticBpMessageBundle\Http\CRMClient;
+use MauticPlugin\MauticBpMessageBundle\Scheduler\FixedHourIntervalScheduler;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailLotManager;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailMessageMapper;
 use MauticPlugin\MauticBpMessageBundle\Service\LotManager;
@@ -63,4 +65,11 @@ return function (ContainerConfigurator $configurator): void {
             service(LoggerInterface::class),
             service(EmailMessageMapper::class),
         ]);
+
+    // Override do scheduler de intervalo do core: redefine o id de serviço Interval
+    // para a subclasse que ancora o trigger_hour quando o dia calculado é futuro
+    // (FixedHourIntervalScheduler). O EventScheduler do core injeta o Interval por
+    // tipo, então esta redefinição passa a valer em todo o agendamento por intervalo.
+    // A subclasse já é auto-carregada pelo ->load() acima; aqui só apontamos o id.
+    $services->set(Interval::class, FixedHourIntervalScheduler::class);
 };
