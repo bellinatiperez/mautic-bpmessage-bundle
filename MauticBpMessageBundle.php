@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace MauticPlugin\MauticBpMessageBundle;
 
 use Mautic\PluginBundle\Bundle\PluginBundleBase;
+use MauticPlugin\MauticBpMessageBundle\DependencyInjection\Compiler\OverrideIntervalSchedulerPass;
 use MauticPlugin\MauticBpMessageBundle\Migration\Engine;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -22,6 +24,18 @@ class MauticBpMessageBundle extends PluginBundleBase
     public function getPath(): string
     {
         return __DIR__;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function build(ContainerBuilder $container): void
+    {
+        parent::build($container);
+
+        // Ancora o trigger_hour em dias futuros no scheduler de intervalo do core
+        // (corrige o espalhamento do vencimento dos próximos estágios).
+        $container->addCompilerPass(new OverrideIntervalSchedulerPass());
     }
 
     /**
