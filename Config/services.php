@@ -9,6 +9,7 @@ use MauticPlugin\MauticBpMessageBundle\Http\BpMessageClient;
 use MauticPlugin\MauticBpMessageBundle\Http\CRMClient;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailLotManager;
 use MauticPlugin\MauticBpMessageBundle\Service\EmailMessageMapper;
+use MauticPlugin\MauticBpMessageBundle\Service\LogManager;
 use MauticPlugin\MauticBpMessageBundle\Service\LotManager;
 use MauticPlugin\MauticBpMessageBundle\Service\MessageMapper;
 use MauticPlugin\MauticBpMessageBundle\Service\RoutesService;
@@ -50,6 +51,7 @@ return function (ContainerConfigurator $configurator): void {
             service(MessageMapper::class),
             service(CRMClient::class),
             service(IntegrationHelper::class),
+            service(LogManager::class),
         ]);
 
     // Register EmailLotManager explicitly to ensure the nullable EmailMessageMapper

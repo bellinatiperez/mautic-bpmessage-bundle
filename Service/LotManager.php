@@ -27,6 +27,7 @@ class LotManager
     private ?MessageMapper $messageMapper = null;
     private ?CRMClient $crmClient = null;
     private ?IntegrationHelper $integrationHelper = null;
+    private ?LogManager $logManager = null;
 
     public function __construct(
         EntityManager $entityManager,
@@ -36,6 +37,7 @@ class LotManager
         ?MessageMapper $messageMapper = null,
         ?CRMClient $crmClient = null,
         ?IntegrationHelper $integrationHelper = null,
+        ?LogManager $logManager = null,
     ) {
         $this->entityManager     = $entityManager;
         $this->client            = $client;
@@ -44,6 +46,7 @@ class LotManager
         $this->messageMapper     = $messageMapper;
         $this->crmClient         = $crmClient;
         $this->integrationHelper = $integrationHelper;
+        $this->logManager        = $logManager;
     }
 
     /**
@@ -488,6 +491,7 @@ class LotManager
         // Increment lot message count
         $lot->incrementMessagesCount();
 
+        
         $this->entityManager->flush();
 
         // Force increment with SQL to ensure persistence during batch processing
@@ -1242,6 +1246,7 @@ class LotManager
                 continue;
             }
 
+            // envio
             $this->client->setBaseUrl($lot->getApiBaseUrl());
             $result = $this->client->addMessagesToLot((int) $lot->getExternalLotId(), $messages);
 
@@ -1266,6 +1271,9 @@ class LotManager
                     'lot_id'      => $lot->getId(),
                     'batch_index' => $batchIndex,
                 ]);
+
+                //active lot manager, send all logs from messages to database
+
             } else {
                 $success = false;
 
@@ -1527,6 +1535,10 @@ class LotManager
                 'UPDATE bpmessage_lot SET external_lot_id = ? WHERE id = ?',
                 [(string) $result['idLot'], $lot->getId()]
             );
+
+            if (null !== $this->logManager) {
+                $this->logManager->sendMessageLogs($lot->getQueueItems());
+            }
 
             $this->logger->info('BpMessage: Lot created successfully in API', [
                 'lot_id'          => $lot->getId(),

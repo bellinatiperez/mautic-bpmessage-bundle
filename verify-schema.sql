@@ -23,13 +23,15 @@ SELECT
     CASE
         WHEN table_name = 'bpmessage_lot' THEN '✓ EXISTS'
         WHEN table_name = 'bpmessage_queue' THEN '✓ EXISTS'
+        WHEN table_name = 'plugin_fornecedor_settings' THEN '✓ EXISTS'
+        WHEN table_name = 'plugin_dataAnalytics_settings' THEN '✓ EXISTS'
         ELSE '✗ MISSING'
     END AS status,
     table_rows AS approximate_rows,
     ROUND(((data_length + index_length) / 1024 / 1024), 2) AS size_mb
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
-  AND table_name IN ('bpmessage_lot', 'bpmessage_queue')
+  AND table_name IN ('bpmessage_lot', 'bpmessage_queue', 'plugin_fornecedor_settings', 'plugin_dataAnalytics_settings')
 ORDER BY table_name;
 
 -- =====================================================
@@ -59,6 +61,32 @@ SELECT
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
   AND table_name = 'bpmessage_queue'
+ORDER BY ordinal_position;
+
+SELECT '\n3b. PLUGIN_FORNECEDOR_SETTINGS STRUCTURE\n' AS '';
+
+SELECT
+    column_name,
+    column_type,
+    is_nullable,
+    column_default,
+    column_key
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND table_name = 'plugin_fornecedor_settings'
+ORDER BY ordinal_position;
+
+SELECT '\n3c. PLUGIN_DATAANALYTICS_SETTINGS STRUCTURE\n' AS '';
+
+SELECT
+    column_name,
+    column_type,
+    is_nullable,
+    column_default,
+    column_key
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND table_name = 'plugin_dataAnalytics_settings'
 ORDER BY ordinal_position;
 
 -- =====================================================
@@ -161,10 +189,10 @@ SELECT '\n8. INSTALLATION SUMMARY\n' AS '';
 SELECT
     'Total Tables' AS metric,
     COUNT(*) AS value,
-    CASE WHEN COUNT(*) = 2 THEN '✓ OK' ELSE '✗ INCOMPLETE' END AS status
+    CASE WHEN COUNT(*) = 4 THEN '✓ OK' ELSE '✗ INCOMPLETE' END AS status
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
-  AND table_name IN ('bpmessage_lot', 'bpmessage_queue')
+  AND table_name IN ('bpmessage_lot', 'bpmessage_queue', 'plugin_fornecedor_settings', 'plugin_dataAnalytics_settings')
 
 UNION ALL
 

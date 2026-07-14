@@ -157,6 +157,20 @@ return [
                     MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue::class,
                 ],
             ],
+            'mautic.bpmessage.repository.fornecedor' => [
+                'class'     => Doctrine\ORM\EntityRepository::class,
+                'factory'   => ['@doctrine.orm.entity_manager', 'getRepository'],
+                'arguments' => [
+                    MauticPlugin\MauticBpMessageBundle\Entity\PluginFornecedorSettings::class,
+                ],
+            ],
+            'mautic.bpmessage.repository.data_analytics' => [
+                'class'     => Doctrine\ORM\EntityRepository::class,
+                'factory'   => ['@doctrine.orm.entity_manager', 'getRepository'],
+                'arguments' => [
+                    MauticPlugin\MauticBpMessageBundle\Entity\PluginDataAnalyticsSettings::class,
+                ],
+            ],
             'mautic.bpmessage.service.lot_manager' => [
                 'class'     => MauticPlugin\MauticBpMessageBundle\Service\LotManager::class,
                 'arguments' => [

@@ -89,6 +89,40 @@ CREATE TABLE IF NOT EXISTS `bpmessage_queue` (
 COMMENT='Queue of individual messages to be sent via BpMessage';
 
 -- =====================================================
+-- Table: plugin_fornecedor_settings
+-- =====================================================
+-- Stores per-supplier (fornecedor) API access settings
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `plugin_fornecedor_settings` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `id_carteira` VARCHAR(191) NOT NULL COMMENT 'Carteira ID (string to preserve leading zeros)',
+    `token_acesso` VARCHAR(255) NOT NULL COMMENT 'Supplier API access token',
+    `id_empresa` VARCHAR(191) NOT NULL COMMENT 'Company ID (string to preserve leading zeros)',
+    `url` VARCHAR(255) NOT NULL COMMENT 'Supplier API base URL',
+    PRIMARY KEY (`id`),
+    INDEX `idx_id_carteira` (`id_carteira`),
+    INDEX `idx_id_empresa` (`id_empresa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Per-supplier (fornecedor) API access settings';
+
+-- =====================================================
+-- Table: plugin_dataAnalytics_settings
+-- =====================================================
+-- Stores data analytics integration settings
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `plugin_dataAnalytics_settings` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `nome` VARCHAR(191) NOT NULL COMMENT 'Analytics integration name',
+    `token` VARCHAR(255) NOT NULL COMMENT 'Analytics API access token',
+    `url` VARCHAR(255) NOT NULL COMMENT 'Analytics API base URL',
+    PRIMARY KEY (`id`),
+    INDEX `idx_nome` (`nome`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Data analytics integration settings';
+
+-- =====================================================
 -- Verification Queries
 -- =====================================================
 -- Run these to verify the tables were created correctly
@@ -103,7 +137,17 @@ UNION ALL
 SELECT 'bpmessage_queue', COUNT(*)
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
-  AND table_name = 'bpmessage_queue';
+  AND table_name = 'bpmessage_queue'
+UNION ALL
+SELECT 'plugin_fornecedor_settings', COUNT(*)
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_name = 'plugin_fornecedor_settings'
+UNION ALL
+SELECT 'plugin_dataAnalytics_settings', COUNT(*)
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_name = 'plugin_dataAnalytics_settings';
 
 -- Check foreign keys
 SELECT
