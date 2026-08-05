@@ -7,7 +7,6 @@ namespace MauticPlugin\MauticBpMessageBundle\Service;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\EntityManager;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
 use MauticPlugin\MauticBpMessageBundle\Entity\BpMessageQueue;
 use MauticPlugin\MauticBpMessageBundle\Entity\PluginDataAnalyticsSettings;
 use MauticPlugin\MauticBpMessageBundle\Entity\PluginFornecedorSettings;
@@ -18,47 +17,125 @@ class LogManager
     private EntityManager $entityManager;
     private LoggerInterface $logger;
     private Client $httpClient;
-
+    
+    private ?array $lastTemplateRequest = null;
+    private ?array $lastTemplateResponse = null;
+    
     public function __construct(
         EntityManager $entityManager,
         LoggerInterface $logger,
-    ) {
-        $this->entityManager = $entityManager;
-        $this->logger        = $logger;
-
+        ) {
+            $this->entityManager = $entityManager;
+            $this->logger        = $logger;
+            
         $this->httpClient = new Client([
-            'timeout'         => 30,
-            'connect_timeout' => 10,
+            'timeout'         => 5,
+            'connect_timeout' => 3,
             'http_errors'     => false,
-        ]);
+            ]);
+    }
+    
+    public function sendMessageLogs(Collection $queueItems): void
+    {
+        try {
+            if ($queueItems->isEmpty()) {
+                return;
+            }
+    
+            $templateDescription = $this->resolveTemplateDescription($queueItems);
+    
+            if (null === $templateDescription) {
+                $this->logger->warning('BpMessage LogManager: templateDescription not found in queue items', [
+                    'queue_items_count' => $queueItems->count(),
+                ]);
+            }
+    
+            $splunkSettings = $this->entityManager
+                ->getRepository(PluginDataAnalyticsSettings::class)
+                ->findOneBy(['nome' => 'splunk']);
+    
+            if (null === $splunkSettings) {
+                $this->logger->warning('BpMessage LogManager: PluginDataAnalyticsSettings (splunk) not configured, skipping log send');
+    
+                return;
+            }
+    
+            $urlSplunk   = $splunkSettings->getUrl();
+            $tokenSplunk = $splunkSettings->getToken();
+    
+            $eventPayload = $this->buildLogEventoPayload($queueItems, $templateDescription);
+    
+            $response = $this->httpClient->post($urlSplunk, [
+                'headers' => [
+                    'Authorization' => "Splunk {$tokenSplunk}",
+                ],
+                'json' => $eventPayload,
+                'verify' => false,
+            ]);
+    
+            $this->logger->info('BpMessage LogManager: sendMessageLogs event sent', [
+                'url'         => $urlSplunk,
+                'status_code' => $response->getStatusCode(),
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error('BpMessage LogManager: sendMessageLogs failed, skipping without blocking lot creation', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function getTemplateDescription(int $carteiraId, string $idTemplate): ?string
     {
+        $this->lastTemplateRequest  = null;
+        $this->lastTemplateResponse = null;
+
         $fornecedorSettings = $this->entityManager
             ->getRepository(PluginFornecedorSettings::class)
             ->findOneBy(['idCarteira' => (string) $carteiraId]);
 
-        $token     = $fornecedorSettings?->getTokenAcesso();
-        $idEmpresa = $fornecedorSettings?->getIdEmpresa();
-        $url       = $fornecedorSettings?->getUrl();
+        if (null === $fornecedorSettings) {
+            $this->logger->warning('BpMessage LogManager: PluginFornecedorSettings not found for carteira', [
+                'carteira_id' => $carteiraId,
+            ]);
 
-        $url  = $url  + $idEmpresa;
+            return null;
+        }
 
+        $token     = $fornecedorSettings->getTokenAcesso();
+        $idEmpresa = $fornecedorSettings->getIdEmpresa();
+        $url       = $fornecedorSettings->getUrl().'/'.$idEmpresa;
+
+        $this->lastTemplateRequest = [
+            'url'     => $url,
+            'method'  => 'GET',
+            'headers' => ['Authorization' => $token],
+        ];
 
         try {
+            $startTime = microtime(true);
+
             $response = $this->httpClient->get($url, [
                 'headers' => [
                     'Authorization' => $token,
                 ],
             ]);
 
+            $elapsedMs = (microtime(true) - $startTime) * 1000;
+            $body      = (string) $response->getBody();
+
+            $this->lastTemplateResponse = [
+                'statusCode' => $response->getStatusCode(),
+                'body'       => $body,
+                'elapsedMs'  => $elapsedMs,
+            ];
+
             $this->logger->info('BpMessage LogManager: getTemplateDescription GET response', [
                 'url'         => $url,
                 'status_code' => $response->getStatusCode(),
+                'elapsed_ms'  => $elapsedMs,
             ]);
 
-            $templates = json_decode((string) $response->getBody(), true);
+            $templates = json_decode($body, true);
 
             if (!is_array($templates)) {
                 return null;
@@ -71,7 +148,7 @@ class LogManager
             }
 
             return null;
-        } catch (GuzzleException $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('BpMessage LogManager: getTemplateDescription GET failed', [
                 'url'   => $url,
                 'error' => $e->getMessage(),
@@ -81,75 +158,62 @@ class LogManager
         }
     }
 
-    public function sendMessageLogs(Collection $queueItems): void
+    
+
+    private function buildLogEventoPayload(Collection $queueItems, ?string $templateDescription): array
     {
-        $templateDescription = $this->resolveTemplateDescription($queueItems);
+        $firstQueueItem = $queueItems->first();
+        $lot            = $firstQueueItem->getLot();
+        $payload        = $firstQueueItem->getPayloadArray();
 
-        if (null === $templateDescription) {
-            $this->logger->warning('BpMessage LogManager: templateDescription not found in queue items', [
-                'queue_items_count' => $queueItems->count(),
-            ]);
+        $carteiraId = !empty($payload['idForeignBookBusiness']) ? (int) $payload['idForeignBookBusiness'] : null;
+
+        $maskedRequest = $this->lastTemplateRequest;
+        if (null !== $maskedRequest && isset($maskedRequest['headers']['Authorization'])) {
+            // Mask the access token before it is embedded in the event body sent to Splunk.
+            $token = $maskedRequest['headers']['Authorization'];
+            $maskedRequest['headers']['Authorization'] = strlen($token) > 4
+                ? str_repeat('*', strlen($token) - 4).substr($token, -4)
+                : str_repeat('*', strlen($token));
         }
 
-        $splunkSettings = $this->entityManager
-            ->getRepository(PluginDataAnalyticsSettings::class)
-            ->findOneBy(['nome' => 'splunk']);
+        $logEvento = [
+            'Crm'             => $lot->getCrmId(),
+            'CarteiraId'      => $carteiraId,
+            'Carteira'        => null !== $carteiraId ? (string) $carteiraId : null,
+            'Fase'            => 'envio-mensagem-'.($payload['phone'] ?? ''),
+            'Api'             => 'api-mautic',
+            'Origem'          => 'Mautic::sendMessageLogs',
+            'Servico'         => sprintf('%s enviado para %s', $templateDescription ?? '', $payload['phone'] ?? ''),
+            'Data'            => (new \DateTime())->format('c'),
+            'CpfCnpj'         => null,
+            'Metodo'          => $this->lastTemplateRequest['method'] ?? null,
+            'Url'             => $this->lastTemplateRequest['url'] ?? null,
+            'Tempo'           => $this->lastTemplateResponse['elapsedMs'] ?? null,
+            'HttpStatus'      => $this->lastTemplateResponse['statusCode'] ?? null,
+            'UserJornadaGuid' => null,
+            'RequestId'       => null,
+            'Canal'           => [
+                'Id'        => null,
+                'Nome'      => null,
+                'TipoCanal' => null,
+            ],
+            'Request'    => $maskedRequest,
+            'Response'   => $this->lastTemplateResponse,
+            'TrackingId' => $payload['contract'] ?? null,
+            'Campanha'   => $lot->getCampaignId(),
+            'IpAddress'  => null,
+            'HostName'   => gethostname(),
+            'Referrer'   => null,
+            'UserAgent'  => null,
+            'Exceptions' => null,
+        ];
 
-        $urlSplunk   = $splunkSettings?->getUrl();
-        $tokenSplunk = $splunkSettings?->getToken();
-
-        $this->logger->info('BpMessage LogManager: sendMessageLogs (mock)', [
-            'queue_items_count'    => $queueItems->count(),
-            'template_description' => $templateDescription,
-        ]);
-
-        $eventos = $this->buildEventosPayload($queueItems, $templateDescription);
-
-        if (empty($eventos)) {
-            return;
-        }
-
-        try {
-            $response = $this->httpClient->post($urlSplunk, [
-                'headers' => [
-                    'Authorization' => "Splunk {$tokenSplunk}",
-                ],
-                'json' => $eventos,
-            ]);
-
-            $this->logger->info('BpMessage LogManager: sendMessageLogs eventos sent', [
-                'url'         => $urlSplunk,
-                'status_code' => $response->getStatusCode(),
-                'eventos'     => $eventos,
-            ]);
-        } catch (GuzzleException $e) {
-            $this->logger->error('BpMessage LogManager: failed to send eventos', [
-                'url'   => $urlSplunk,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    private function buildEventosPayload(Collection $queueItems, ?string $templateDescription): array
-    {
-        $eventos = [];
-
-        foreach ($queueItems as $queueItem) {
-            $payload = $queueItem->getPayloadArray();
-
-            if (empty($payload['phone'])) {
-                continue;
-            }
-
-            $eventos[] = [
-                'event' => [
-                    'template' => $templateDescription,
-                    'numero'   => $payload['phone'],
-                ],
-            ];
-        }
-
-        return $eventos;
+        return [
+            'index' => 'api',
+            'time'  => time(),
+            'event' => $logEvento,
+        ];
     }
 
     private function resolveTemplateDescription(Collection $queueItems): ?string

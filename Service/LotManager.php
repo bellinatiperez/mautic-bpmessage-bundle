@@ -1272,8 +1272,6 @@ class LotManager
                     'batch_index' => $batchIndex,
                 ]);
 
-                //active lot manager, send all logs from messages to database
-
             } else {
                 $success = false;
 
@@ -1537,7 +1535,14 @@ class LotManager
             );
 
             if (null !== $this->logManager) {
-                $this->logManager->sendMessageLogs($lot->getQueueItems());
+                try {
+                    $this->logManager->sendMessageLogs($lot->getQueueItems());
+                } catch (\Throwable $logError) {
+                    $this->logger->error('BpMessage: sendMessageLogs failed, continuing without blocking lot creation', [
+                        'lot_id' => $lot->getId(),
+                        'error'  => $logError->getMessage(),
+                    ]);
+                }
             }
 
             $this->logger->info('BpMessage: Lot created successfully in API', [
