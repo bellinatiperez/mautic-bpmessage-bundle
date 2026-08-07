@@ -632,6 +632,26 @@ class LotManager
             ]);
         }
 
+        $seenCpfCnpjInLot = [];
+        try {
+            $seedCpfRows = $connection->fetchAllAssociative(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.cpfCnpjReceiver')) AS cpf_cnpj "
+                .'FROM bpmessage_queue WHERE lot_id = ? AND status IN (?, ?)',
+                [$lot->getId(), 'SENT', 'SENDING']
+            );
+            foreach ($seedCpfRows as $seedCpfRow) {
+                $seedCpf = preg_replace('/\D/', '', (string) ($seedCpfRow['cpf_cnpj'] ?? ''));
+                if ('' !== $seedCpf) {
+                    $seenCpfCnpjInLot[$seedCpf] = true;
+                }
+            }
+        } catch (\Throwable $seedCpfError) {
+            $this->logger->warning('BpMessage: falha ao semear dedup de CPF/CNPJ (seguindo sem seed)', [
+                'lot_id' => $lot->getId(),
+                'error'  => $seedCpfError->getMessage(),
+            ]);
+        }
+
         foreach ($batches as $batchIndex => $batch) {
             $this->logger->info('BpMessage: Sending batch', [
                 'lot_id'      => $lot->getId(),
@@ -704,6 +724,21 @@ class LotManager
                 if (null !== $eligibilityError) {
                     $failedQueues[] = ['queue' => $eligQueue, 'error' => $eligibilityError];
                     continue;
+                }
+
+                if ('' !== $cpfCnpjFieldCfg) {
+                    $cpfDigits = preg_replace('/\D/', '', (string) $cpfValue);
+                    if ('' !== $cpfDigits) {
+                        if (isset($seenCpfCnpjInLot[$cpfDigits])) {
+                            $failedQueues[] = ['queue' => $eligQueue, 'error' => 'CPF/CNPJ já contemplado por outro contrato no lote'];
+                            $this->logger->info('BpMessage: registro descartado - CPF/CNPJ já contemplado por outro contrato no lote', [
+                                'lot_id'  => $lot->getId(),
+                                'lead_id' => $eligQueue->getLead()->getId(),
+                            ]);
+                            continue;
+                        }
+                        $seenCpfCnpjInLot[$cpfDigits] = true;
+                    }
                 }
 
                 // Dedup de ENTREGA duplicada no lote — colapsa SOMENTE quando o
