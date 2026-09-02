@@ -199,6 +199,13 @@ class BpMessageLot
         $builder->addNamedField('createLotPayload', 'json', 'create_lot_payload', ['nullable' => true]);
         $builder->addNamedField('lotType', 'string', 'lot_type', ['length' => 20, 'default' => 'message']);
 
+        $builder->createOneToMany('queueItems', 'BpMessageQueue')
+            ->mappedBy('lot')
+            ->cascadePersist()
+            ->cascadeRemove()
+            ->orphanRemoval()
+            ->build();
+
         $builder->addIndex(['status'], 'idx_status');
         $builder->addIndex(['lot_type'], 'idx_lot_type');
         $builder->addIndex(['created_at'], 'idx_created_at');

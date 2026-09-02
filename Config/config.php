@@ -171,6 +171,13 @@ return [
                     MauticPlugin\MauticBpMessageBundle\Entity\PluginDataAnalyticsSettings::class,
                 ],
             ],
+            'mautic.bpmessage.service.log_manager' => [
+                'class'     => MauticPlugin\MauticBpMessageBundle\Service\LogManager::class,
+                'arguments' => [
+                    'doctrine.orm.entity_manager',
+                    'monolog.logger.mautic',
+                ],
+            ],
             'mautic.bpmessage.service.lot_manager' => [
                 'class'     => MauticPlugin\MauticBpMessageBundle\Service\LotManager::class,
                 'arguments' => [
@@ -181,6 +188,7 @@ return [
                     'mautic.bpmessage.service.message_mapper',
                     'mautic.bpmessage.http.crm_client',
                     'mautic.helper.integration',
+                    'mautic.bpmessage.service.log_manager',
                 ],
             ],
             'mautic.bpmessage.service.message_mapper' => [

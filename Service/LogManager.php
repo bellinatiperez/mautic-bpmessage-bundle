@@ -84,14 +84,14 @@ class LogManager
         }
     }
 
-    public function getTemplateDescription(int $carteiraId, string $idTemplate): ?string
+    public function getTemplateDescription(string $carteiraId, string $idTemplate): ?string
     {
         $this->lastTemplateRequest  = null;
         $this->lastTemplateResponse = null;
 
         $fornecedorSettings = $this->entityManager
             ->getRepository(PluginFornecedorSettings::class)
-            ->findOneBy(['idCarteira' => (string) $carteiraId]);
+            ->findOneBy(['idCarteira' => $carteiraId]);
 
         if (null === $fornecedorSettings) {
             $this->logger->warning('BpMessage LogManager: PluginFornecedorSettings not found for carteira', [
@@ -125,7 +125,6 @@ class LogManager
 
             $this->lastTemplateResponse = [
                 'statusCode' => $response->getStatusCode(),
-                'body'       => $body,
                 'elapsedMs'  => $elapsedMs,
             ];
 
@@ -142,7 +141,7 @@ class LogManager
             }
 
             foreach ($templates as $template) {
-                if (isset($template['template_id']) && (string) $template['template_id'] === $idTemplate) {
+                if (isset($template['code']) && (string) $template['code'] === $idTemplate) {
                     return $template['text'] ?? null;
                 }
             }
@@ -166,7 +165,7 @@ class LogManager
         $lot            = $firstQueueItem->getLot();
         $payload        = $firstQueueItem->getPayloadArray();
 
-        $carteiraId = !empty($payload['idForeignBookBusiness']) ? (int) $payload['idForeignBookBusiness'] : null;
+        $carteiraId = !empty($payload['idForeignBookBusiness']) ? (string) $payload['idForeignBookBusiness'] : null;
 
         $maskedRequest = $this->lastTemplateRequest;
         if (null !== $maskedRequest && isset($maskedRequest['headers']['Authorization'])) {
@@ -184,7 +183,7 @@ class LogManager
             'Fase'            => 'envio-mensagem-'.($payload['phone'] ?? ''),
             'Api'             => 'api-mautic',
             'Origem'          => 'Mautic::sendMessageLogs',
-            'Servico'         => sprintf('%s enviado para %s', $templateDescription ?? '', $payload['phone'] ?? ''),
+            'Servico'         => sprintf('Log de registro de Envio: %s enviado para %s', $templateDescription ?? '', $payload['phone'] ?? ''),
             'Data'            => (new \DateTime())->format('c'),
             'CpfCnpj'         => null,
             'Metodo'          => $this->lastTemplateRequest['method'] ?? null,
@@ -199,7 +198,7 @@ class LogManager
                 'TipoCanal' => null,
             ],
             'Request'    => $maskedRequest,
-            'Response'   => $this->lastTemplateResponse,
+            'Response'   => $this->lastTemplateResponse['statusCode'] ?? null,
             'TrackingId' => $payload['contract'] ?? null,
             'Campanha'   => $lot->getCampaignId(),
             'IpAddress'  => null,
@@ -223,7 +222,7 @@ class LogManager
 
             if (!empty($payload['idTemplate']) && !empty($payload['idForeignBookBusiness'])) {
                 return $this->getTemplateDescription(
-                    (int) $payload['idForeignBookBusiness'],
+                    (string) $payload['idForeignBookBusiness'],
                     (string) $payload['idTemplate']
                 );
             }
