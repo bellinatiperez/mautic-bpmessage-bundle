@@ -209,7 +209,7 @@ class LogManager
         ];
 
         return [
-            'index' => 'api',
+            'index' => 'bporquestrador-mautic',
             'time'  => time(),
             'event' => $logEvento,
         ];
